@@ -1,0 +1,33 @@
+# =================================================================
+#  Docker Compose for Family Budget Management Tool (Stable)
+# =================================================================
+
+services:
+  # 1. The Backend Node.js/Express API Server
+  server:
+    build:
+      context: .
+      dockerfile: ./deployment/Dockerfile.server
+    container_name: budget_app_server
+    volumes:
+      # Only the database data is mounted, not the application code.
+      - budget_db_data:/usr/src/app/data/sqlite
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+
+  # 2. The Frontend Service (React App + Nginx Proxy)
+  client:
+    build:
+      context: .
+      dockerfile: ./deployment/Dockerfile.client
+    container_name: budget_app_client
+    ports:
+      # Expose the application on port 80 of your Raspberry Pi
+      - "80:80"
+    restart: unless-stopped
+    depends_on:
+      - server
+
+volumes:
+  budget_db_data: {}
