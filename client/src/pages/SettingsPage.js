@@ -5,6 +5,7 @@ import CategoryManager from '../components/settings/CategoryManager';
 import VendorManager from '../components/settings/VendorManager';
 import RecurringBillsManager from '../components/settings/RecurringBillsManager';
 import ApplicationSettings from '../components/settings/ApplicationSettings';
+import SavingsManager from '../components/settings/SavingsManager'; // Import the new component
 
 function SettingsPage() {
   return (
@@ -12,10 +13,12 @@ function SettingsPage() {
       <h1 className="text-3xl font-bold mb-6">Settings</h1>
 
       <Tabs defaultValue="categories" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        {/* MODIFIED: Added a 5-column grid and the new Savings trigger */}
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="vendors">Vendors</TabsTrigger>
           <TabsTrigger value="bills">Recurring Bills</TabsTrigger>
+          <TabsTrigger value="savings">Savings</TabsTrigger>
           <TabsTrigger value="app">Application</TabsTrigger>
         </TabsList>
 
@@ -46,6 +49,17 @@ function SettingsPage() {
               <CardDescription>Set up and manage your scheduled recurring payments for the cashflow forecast.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2"><RecurringBillsManager /></CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* NEW: Added the content for the Savings tab */}
+        <TabsContent value="savings">
+           <Card>
+            <CardHeader>
+              <CardTitle>Manage Savings</CardTitle>
+              <CardDescription>Define your savings accounts and set your financial goals.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2"><SavingsManager /></CardContent>
           </Card>
         </TabsContent>
 

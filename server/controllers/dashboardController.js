@@ -1,13 +1,29 @@
 const Transaction = require('../models/Transaction');
 const Budget = require('../models/Budget');
 const { createFinancialMonthService } = require('../services/financialMonthService');
+const AppSettings = require('../models/AppSettings');
 
 class DashboardController {
   static async getMonthlySummary(req, res) {
     try {
+      const settings = await AppSettings.get();
+      if (!settings) {
+        throw new Error("App settings not found. Please complete initial setup.");
+      }
+
       const today = new Date();
-      const year = today.getFullYear();
-      const month = today.getMonth() + 1;
+      let year = today.getFullYear();
+      let month = today.getMonth() + 1; // getMonth() is 0-indexed, so add 1
+
+      // Logic to determine the correct financial month
+      // If today's date is on or after the fiscal start day, we are in the *next* financial month.
+      if (today.getDate() >= settings.fiscal_day_start) {
+        month += 1;
+        if (month > 12) {
+          month = 1;
+          year += 1;
+        }
+      }
 
       const financialMonthService = await createFinancialMonthService();
       const { startDate, endDate } = financialMonthService.getFinancialMonthRange(year, month);
@@ -19,7 +35,6 @@ class DashboardController {
       ] = await Promise.all([
         Transaction.getSummaryByDateRange(startDate, endDate),
         Transaction.getSpendingByCategory(startDate, endDate),
-        // CORRECTED: This now calls the correct function from the Budget model
         Budget.getCategoryBudgetsForMonth(year, month, startDate, endDate)
       ]);
 

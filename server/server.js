@@ -25,6 +25,7 @@ const recurringBillRoutes = require('./routes/recurringBills');
 const forecastRoutes = require('./routes/forecast');
 const subcategoryRoutes = require('./routes/subcategories');
 const settingsRoutes = require('./routes/settings');
+const savingsGoalsRoutes = require('./routes/savingsGoals');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -36,6 +37,7 @@ app.use('/api/recurring-bills', recurringBillRoutes);
 app.use('/api/forecast', forecastRoutes);
 app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/savings', savingsGoalsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });

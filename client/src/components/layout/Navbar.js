@@ -17,6 +17,8 @@ function Navbar() {
         <Link to="/dashboard" className={getLinkClasses('/dashboard')}>Dashboard</Link>
         <Link to="/transactions" className={getLinkClasses('/transactions')}>Transactions</Link>
         <Link to="/budgets" className={getLinkClasses('/budgets')}>Budgets</Link>
+        {/* NEW: Added Savings Link */}
+        <Link to="/savings" className={getLinkClasses('/savings')}>Savings</Link>
         <Link to="/settings" className={getLinkClasses('/settings')}>Settings</Link>
       </nav>
       <Sheet>
@@ -29,6 +31,8 @@ function Navbar() {
             <Link to="/dashboard" className={getLinkClasses('/dashboard')}>Dashboard</Link>
             <Link to="/transactions" className={getLinkClasses('/transactions')}>Transactions</Link>
             <Link to="/budgets" className={getLinkClasses('/budgets')}>Budgets</Link>
+            {/* NEW: Added Savings Link */}
+            <Link to="/savings" className={getLinkClasses('/savings')}>Savings</Link>
             <Link to="/settings" className={getLinkClasses('/settings')}>Settings</Link>
           </nav>
         </SheetContent>

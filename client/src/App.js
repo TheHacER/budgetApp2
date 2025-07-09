@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import TransactionsPage from './pages/TransactionsPage';
 import BudgetsPage from './pages/BudgetsPage';
+import SavingsPage from './pages/SavingsPage'; // Import the new page
 import SettingsPage from './pages/SettingsPage';
 import InitialSetupPage from './pages/InitialSetupPage';
 import Navbar from './components/layout/Navbar';
@@ -24,6 +25,7 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/budgets" element={<BudgetsPage />} />
+          <Route path="/savings" element={<SavingsPage />} /> {/* Add the new route */}
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>

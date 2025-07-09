@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { getDashboardSummary, getForecast } from '../services/api';
+import { getDashboardSummary, getForecast, getAllSavingsAccounts } from '../services/api'; // Added getAllSavingsAccounts
 import BudgetBarChart from '../components/charts/BudgetBarChart';
+import SavingsDonutChart from '../components/charts/SavingsDonutChart'; // Import the new chart
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 function Dashboard() {
   const [summaryData, setSummaryData] = useState(null);
   const [forecastData, setForecastData] = useState(null);
+  const [savingsAccounts, setSavingsAccounts] = useState([]); // New state for savings
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -15,12 +16,15 @@ function Dashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [summary, forecast] = await Promise.all([
+        // Fetch all three sets of data in parallel
+        const [summary, forecast, savings] = await Promise.all([
           getDashboardSummary(),
-          getForecast()
+          getForecast(),
+          getAllSavingsAccounts()
         ]);
         setSummaryData(summary);
         setForecastData(forecast);
+        setSavingsAccounts(savings);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -46,6 +50,7 @@ function Dashboard() {
   };
 
   const summary = summaryData?.month_to_date_summary;
+  const allGoals = savingsAccounts.flatMap(acc => acc.goals);
 
   return (
     <div className="container mx-auto p-4 md:p-6 space-y-6">
@@ -56,32 +61,33 @@ function Dashboard() {
       {!loading && summaryData && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Income</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">{formatCurrency(summary.total_income)}</div>
-            </CardContent>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Income</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold text-green-600">{formatCurrency(summary.total_income)}</div></CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Spending</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-red-600">{formatCurrency(summary.total_spending)}</div>
-            </CardContent>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Spending</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold text-red-600">{formatCurrency(summary.total_spending)}</div></CardContent>
           </Card>
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Surplus / Deficit</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${summary.surplus_deficit >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                {formatCurrency(summary.surplus_deficit)}
-              </div>
-            </CardContent>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Surplus / Deficit</CardTitle></CardHeader>
+            <CardContent><div className={`text-2xl font-bold ${summary.surplus_deficit >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>{formatCurrency(summary.surplus_deficit)}</div></CardContent>
           </Card>
         </div>
+      )}
+
+      {/* NEW: Savings Goals Section */}
+      {!loading && allGoals.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Savings Goals</CardTitle>
+            <CardDescription>Your progress towards your financial goals.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-8 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {allGoals.map(goal => (
+              <SavingsDonutChart key={goal.id} goal={goal} />
+            ))}
+          </CardContent>
+        </Card>
       )}
 
       {!loading && forecastData && (
@@ -109,12 +115,8 @@ function Dashboard() {
 
       {!loading && summaryData && (
         <Card>
-          <CardHeader>
-            <CardTitle>Budget vs. Actual Spending</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BudgetBarChart data={summaryData.budget_vs_actual} />
-          </CardContent>
+          <CardHeader><CardTitle>Budget vs. Actual Spending</CardTitle></CardHeader>
+          <CardContent><BudgetBarChart data={summaryData.budget_vs_actual} /></CardContent>
         </Card>
       )}
     </div>

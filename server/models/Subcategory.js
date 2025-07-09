@@ -27,6 +27,12 @@ class Subcategory {
     const sql = `DELETE FROM subcategories WHERE id = ?`;
     return await database.run(sql, [id]);
   }
+
+  static async findParentCategory(subcategoryId) {
+    const database = await db.openDb();
+    const sql = `SELECT category_id FROM subcategories WHERE id = ?`;
+    return await database.get(sql, [subcategoryId]);
+  }
 }
 
 module.exports = Subcategory;
