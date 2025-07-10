@@ -24,6 +24,7 @@ async function fetchApi(url, options = {}, isFile = false) {
 
 export async function uploadTransactionsFile(file) { const formData = new FormData(); formData.append('transactionsFile', file); return fetchApi('/transactions/upload', { method: 'POST', body: formData }, true); }
 export async function login(email, password) { return fetchApi('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }); }
+export async function register(email, password) { return fetchApi('/auth/register', { method: 'POST', body: JSON.stringify({ email, password }) }); }
 export async function getAppSettings() { return fetchApi('/settings'); }
 export async function saveAppSettings(settings) { return fetchApi('/settings', { method: 'POST', body: JSON.stringify(settings) }); }
 export async function refreshHolidays() { return fetchApi('/settings/refresh-holidays', { method: 'POST' }); }
@@ -60,3 +61,7 @@ export async function withdrawFromSavingsGoal(id, withdrawalData) { return fetch
 export async function getIgnoredTransactions() { return fetchApi('/transactions/ignored'); }
 export async function reinstateTransaction(id) { return fetchApi(`/transactions/ignored/${id}/reinstate`, { method: 'POST' }); }
 export async function purgeIgnoredTransactions() { return fetchApi('/transactions/ignored/purge', { method: 'DELETE' }); }
+export async function getActivePlannedIncome() { return fetchApi('/planned-income'); }
+export async function createPlannedIncome(incomeData) { return fetchApi('/planned-income', { method: 'POST', body: JSON.stringify(incomeData) }); }
+export async function updatePlannedIncome(id, incomeData) { return fetchApi(`/planned-income/${id}`, { method: 'PUT', body: JSON.stringify(incomeData) }); }
+export async function deactivatePlannedIncome(id) { return fetchApi(`/planned-income/${id}`, { method: 'DELETE' }); }

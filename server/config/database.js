@@ -22,17 +22,8 @@ async function migrate(db) {
     CREATE TABLE IF NOT EXISTS public_holidays ( id INTEGER PRIMARY KEY AUTOINCREMENT, holiday_date DATE NOT NULL UNIQUE, name TEXT NOT NULL );
     CREATE TABLE IF NOT EXISTS savings_accounts ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, institution TEXT, account_number TEXT, current_balance REAL NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
     CREATE TABLE IF NOT EXISTS savings_goals ( id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL, title TEXT NOT NULL, target_amount REAL NOT NULL, starting_balance REAL NOT NULL DEFAULT 0, current_amount REAL NOT NULL DEFAULT 0, target_date DATE, priority TEXT CHECK(priority IN ('high', 'medium', 'low')) NOT NULL DEFAULT 'medium', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (account_id) REFERENCES savings_accounts (id) ON DELETE CASCADE );
-
-    CREATE TABLE IF NOT EXISTS ignored_transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        transaction_date DATE NOT NULL,
-        description_original TEXT NOT NULL,
-        amount REAL NOT NULL,
-        is_debit BOOLEAN NOT NULL,
-        source_account TEXT,
-        reason TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+    CREATE TABLE IF NOT EXISTS ignored_transactions ( id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_date DATE NOT NULL, description_original TEXT NOT NULL, amount REAL NOT NULL, is_debit BOOLEAN NOT NULL, source_account TEXT, reason TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
+    CREATE TABLE IF NOT EXISTS planned_income ( id INTEGER PRIMARY KEY AUTOINCREMENT, source_name TEXT NOT NULL, amount REAL NOT NULL, day_of_month INTEGER NOT NULL, is_active BOOLEAN DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
   `;
   await db.exec(schema);
 }

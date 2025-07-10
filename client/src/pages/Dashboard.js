@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { getDashboardSummary, getForecast, getAllSavingsAccounts } from '../services/api'; // Added getAllSavingsAccounts
+import { getDashboardSummary, getForecast, getAllSavingsAccounts } from '../services/api';
 import BudgetBarChart from '../components/charts/BudgetBarChart';
-import SavingsDonutChart from '../components/charts/SavingsDonutChart'; // Import the new chart
+import SavingsDonutChart from '../components/charts/SavingsDonutChart';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 function Dashboard() {
   const [summaryData, setSummaryData] = useState(null);
   const [forecastData, setForecastData] = useState(null);
-  const [savingsAccounts, setSavingsAccounts] = useState([]); // New state for savings
+  const [savingsAccounts, setSavingsAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -16,7 +16,6 @@ function Dashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        // Fetch all three sets of data in parallel
         const [summary, forecast, savings] = await Promise.all([
           getDashboardSummary(),
           getForecast(),
@@ -75,7 +74,6 @@ function Dashboard() {
         </div>
       )}
 
-      {/* NEW: Savings Goals Section */}
       {!loading && allGoals.length > 0 && (
         <Card>
           <CardHeader>
@@ -94,7 +92,7 @@ function Dashboard() {
          <Card>
             <CardHeader>
               <CardTitle>12-Month Cashflow Forecast</CardTitle>
-              <CardDescription>Projected balance based on your recurring bills.</CardDescription>
+              <CardDescription>Projected balance based on recurring bills and planned income.</CardDescription>
             </CardHeader>
             <CardContent>
                <div style={{ width: '100%', height: 300 }}>

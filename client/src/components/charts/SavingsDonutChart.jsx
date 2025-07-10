@@ -2,7 +2,7 @@ import React from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
 const SavingsDonutChart = ({ goal }) => {
-  const savedAmount = goal.current_amount;
+  const savedAmount = goal.current_amount || 0;
   const remainingAmount = goal.target_amount - savedAmount;
 
   const data = [

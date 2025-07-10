@@ -17,16 +17,7 @@ class Budget {
       throw error;
     }
   }
-  static async addToBudget(year, month, category_id, amount) {
-      const database = await db.openDb();
-      const sql = `
-        INSERT INTO budgets (category_id, year, month, amount)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(category_id, year, month) DO UPDATE SET
-        amount = amount + excluded.amount;
-    `;
-     await database.run(sql, [category_id, year, month, amount]);
-}
+
   static async getCategoryBudgetsForMonth(year, month, startDate, endDate) {
     const database = await db.openDb();
     const sql = `
@@ -52,6 +43,17 @@ class Budget {
       ORDER BY c.name;
     `;
     return await database.all(sql, [year, month, endDate, startDate]);
+  }
+
+  static async addToBudget(year, month, category_id, amount) {
+    const database = await db.openDb();
+    const sql = `
+        INSERT INTO budgets (category_id, year, month, amount)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(category_id, year, month) DO UPDATE SET
+        amount = amount + excluded.amount;
+    `;
+    await database.run(sql, [category_id, year, month, amount]);
   }
 }
 

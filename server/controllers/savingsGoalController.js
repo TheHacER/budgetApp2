@@ -5,8 +5,6 @@ const AppSettings = require('../models/AppSettings');
 const Subcategory = require('../models/Subcategory');
 
 class SavingsController {
-  // ... (all other functions remain the same)
-
   static async createSavingsAccount(req, res) {
     try {
       const account = await SavingsAccount.create(req.body);
@@ -70,7 +68,6 @@ class SavingsController {
     }
   }
 
-  // === WITHDRAWAL LOGIC ===
   static async withdrawFromGoal(req, res) {
     const { id } = req.params;
     const { amount, subcategory_id } = req.body;

@@ -1,5 +1,5 @@
 const AppSettings = require('../models/AppSettings');
-const PublicHoliday = require('../models/PublicHoliday');
+const { getPreviousWorkday, getHolidays } = require('./dateHelpers');
 
 class FinancialMonthService {
   constructor(settings, holidays) {
@@ -7,27 +7,14 @@ class FinancialMonthService {
     this.holidays = holidays;
   }
 
-  isWorkday(date) {
-    const dayOfWeek = date.getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) return false;
-    const isoDate = date.toISOString().split('T')[0];
-    if (this.holidays.has(isoDate)) return false;
-    return true;
-  }
-
-  getPreviousWorkday(date) {
-    let newDate = new Date(date);
-    while (!this.isWorkday(newDate)) {
-      newDate.setDate(newDate.getDate() - 1);
-    }
-    return newDate;
-  }
-
   getFinancialMonthRange(year, month) {
+    // Note: JS months are 0-indexed, so month - 1 for current month, month - 2 for previous.
     const targetStartDate = new Date(year, month - 2, this.fiscalDayStart);
-    const fiscalMonthStartDate = this.getPreviousWorkday(targetStartDate);
+    const fiscalMonthStartDate = getPreviousWorkday(targetStartDate, this.holidays);
+
     const targetEndDate = new Date(year, month - 1, this.fiscalDayStart);
-    const nextFiscalMonthStartDate = this.getPreviousWorkday(targetEndDate);
+    const nextFiscalMonthStartDate = getPreviousWorkday(targetEndDate, this.holidays);
+
     const fiscalMonthEndDate = new Date(nextFiscalMonthStartDate);
     fiscalMonthEndDate.setDate(fiscalMonthEndDate.getDate() - 1);
 
@@ -39,9 +26,11 @@ class FinancialMonthService {
 }
 
 async function createFinancialMonthService() {
-  const settings = await AppSettings.get();
+  const [settings, holidays] = await Promise.all([
+    AppSettings.get(),
+    getHolidays()
+  ]);
   if (!settings) { throw new Error("Application settings have not been configured."); }
-  const holidays = await PublicHoliday.getAllAsSet();
   return new FinancialMonthService(settings, holidays);
 }
 

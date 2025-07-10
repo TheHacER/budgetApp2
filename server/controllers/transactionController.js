@@ -23,6 +23,7 @@ function formatDate(dateString) {
   if (!isNaN(date.getTime()) && date.getFullYear() > 1900) {
     return date.toISOString().split('T')[0];
   }
+  console.warn(`Could not parse date: "${trimmedDate}"`);
   return null;
 }
 
@@ -66,6 +67,7 @@ class TransactionController {
       const ignoredCount = validTransactions.length - newTransactions.length;
       res.status(201).json({ message: `Successfully saved ${newTransactions.length} new transactions. Ignored ${ignoredCount} duplicates.` });
     } catch (error) {
+      console.error('Error processing uploaded file:', error);
       res.status(500).json({ message: 'Error processing file.' });
     }
   }
@@ -116,7 +118,7 @@ class TransactionController {
     try {
       const transactions = await Transaction.findUncategorized();
       res.status(200).json(transactions);
-    } catch (error) { res.status(500).json({ message: 'Server error fetching uncategorized transactions.' }); }
+    } catch (error) { console.error('Error fetching uncategorized transactions:', error); res.status(500).json({ message: 'Server error fetching uncategorized transactions.' }); }
   }
 
   static async categorizeTransaction(req, res) {
@@ -129,7 +131,7 @@ class TransactionController {
       const transaction = await Transaction.findById(id);
       if (transaction && transaction.vendor_id) { await CategorizationRule.createOrUpdateRule(transaction.vendor_id, subcategory_id); }
       res.status(200).json({ message: 'Transaction categorized successfully.' });
-    } catch (error) { res.status(500).json({ message: 'Server error categorizing transaction.' }); }
+    } catch (error) { console.error('Error categorizing transaction:', error); res.status(500).json({ message: 'Server error categorizing transaction.' }); }
   }
 
   static async updateTransactionVendor(req, res) {
@@ -140,7 +142,7 @@ class TransactionController {
       const changes = await Transaction.updateVendor(id, vendor_id);
       if (changes === 0) { return res.status(404).json({ message: 'Transaction not found.' }); }
       res.status(200).json({ message: 'Transaction vendor updated successfully.' });
-    } catch (error) { res.status(500).json({ message: 'Server error updating transaction vendor.' }); }
+    } catch (error) { console.error('Error updating transaction vendor:', error); res.status(500).json({ message: 'Server error updating transaction vendor.' }); }
   }
 
   static async splitTransaction(req, res) {

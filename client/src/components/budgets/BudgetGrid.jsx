@@ -58,30 +58,41 @@ function BudgetGrid({ year, month }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[300px]">Category</TableHead>
+              <TableHead className="w-[250px]">Category</TableHead>
               <TableHead>Recurring Bills</TableHead>
               <TableHead>Budgeted Amount</TableHead>
+              <TableHead>Actual Spend</TableHead>
+              <TableHead>Remaining</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {budgetData.map((category) => (
-              <TableRow key={category.category_id}>
-                <TableCell className="font-medium">{category.category_name}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(category.recurring_bills_total || 0)}
-                </TableCell>
-                <TableCell>
-                  <Input
-                    type="number"
-                    className="w-40"
-                    placeholder="0.00"
-                    value={budgets[category.category_id] || ''}
-                    onChange={(e) => handleBudgetChange(category.category_id, e.target.value)}
-                    min={category.recurring_bills_total || 0}
-                  />
-                </TableCell>
-              </TableRow>
-            ))}
+            {budgetData.map((category) => {
+                const actualSpend = category.actual_spending || 0;
+                const budgeted = budgets[category.category_id] || 0;
+                const remaining = budgeted - actualSpend;
+                return (
+                  <TableRow key={category.category_id}>
+                    <TableCell className="font-medium">{category.category_name}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(category.recurring_bills_total || 0)}
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        className="w-40"
+                        placeholder="0.00"
+                        value={budgets[category.category_id] || ''}
+                        onChange={(e) => handleBudgetChange(category.category_id, e.target.value)}
+                        min={category.recurring_bills_total || 0}
+                      />
+                    </TableCell>
+                    <TableCell>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(actualSpend)}</TableCell>
+                    <TableCell className={remaining < 0 ? 'text-destructive' : ''}>
+                      {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(remaining)}
+                    </TableCell>
+                  </TableRow>
+                )
+            })}
           </TableBody>
         </Table>
       </div>
