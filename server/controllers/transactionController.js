@@ -1,6 +1,7 @@
 const CsvParserService = require('../services/csvParserService');
 const VendorNormalizationService = require('../services/vendorNormalizationService');
 const Transaction = require('../models/Transaction');
+const IgnoredTransaction = require('../models/IgnoredTransaction');
 const CategorizationRule = require('../models/CategorizationRule');
 const SplitTransaction = require('../models/SplitTransaction');
 const db = require('../config/database');
@@ -22,7 +23,6 @@ function formatDate(dateString) {
   if (!isNaN(date.getTime()) && date.getFullYear() > 1900) {
     return date.toISOString().split('T')[0];
   }
-  console.warn(`Could not parse date: "${trimmedDate}"`);
   return null;
 }
 
@@ -52,17 +52,56 @@ class TransactionController {
       }
       const validTransactions = formattedTransactions.filter(tx => tx.transaction_date && tx.amount > 0);
       const newTransactions = [];
-      let duplicateCount = 0;
+
       for (const tx of validTransactions) {
         const isDuplicate = await Transaction.exists(tx);
-        if (!isDuplicate) { newTransactions.push(tx); }
-        else { duplicateCount++; }
+        if (!isDuplicate) { 
+          newTransactions.push(tx); 
+        } else {
+          await IgnoredTransaction.create(tx, 'Potential Duplicate');
+        }
       }
       if (newTransactions.length > 0) { await Transaction.bulkCreate(newTransactions); }
-      res.status(201).json({ message: `Successfully saved ${newTransactions.length} new transactions. Ignored ${duplicateCount} duplicates.` });
+
+      const ignoredCount = validTransactions.length - newTransactions.length;
+      res.status(201).json({ message: `Successfully saved ${newTransactions.length} new transactions. Ignored ${ignoredCount} duplicates.` });
     } catch (error) {
-      console.error('Error processing uploaded file:', error);
       res.status(500).json({ message: 'Error processing file.' });
+    }
+  }
+
+  static async getIgnoredTransactions(req, res) {
+    try {
+      const transactions = await IgnoredTransaction.findAll();
+      res.status(200).json(transactions);
+    } catch (error) {
+      res.status(500).json({ message: 'Server error fetching ignored transactions.' });
+    }
+  }
+
+  static async reinstateTransaction(req, res) {
+    try {
+      const ignoredTx = await IgnoredTransaction.findById(req.params.id);
+      if (!ignoredTx) {
+        return res.status(404).json({ message: 'Ignored transaction not found.' });
+      }
+
+      const { id, reason, created_at, ...txToCreate } = ignoredTx;
+      await Transaction.bulkCreate([txToCreate]);
+      await IgnoredTransaction.delete(req.params.id);
+
+      res.status(200).json({ message: 'Transaction reinstated.' });
+    } catch (error) {
+      res.status(500).json({ message: 'Error reinstating transaction.' });
+    }
+  }
+
+  static async purgeIgnoredTransactions(req, res) {
+    try {
+      await IgnoredTransaction.deleteAll();
+      res.status(204).send();
+    } catch (error) {
+      res.status(500).json({ message: 'Error purging ignored transactions.' });
     }
   }
 
@@ -77,7 +116,7 @@ class TransactionController {
     try {
       const transactions = await Transaction.findUncategorized();
       res.status(200).json(transactions);
-    } catch (error) { console.error('Error fetching uncategorized transactions:', error); res.status(500).json({ message: 'Server error fetching uncategorized transactions.' }); }
+    } catch (error) { res.status(500).json({ message: 'Server error fetching uncategorized transactions.' }); }
   }
 
   static async categorizeTransaction(req, res) {
@@ -90,7 +129,7 @@ class TransactionController {
       const transaction = await Transaction.findById(id);
       if (transaction && transaction.vendor_id) { await CategorizationRule.createOrUpdateRule(transaction.vendor_id, subcategory_id); }
       res.status(200).json({ message: 'Transaction categorized successfully.' });
-    } catch (error) { console.error('Error categorizing transaction:', error); res.status(500).json({ message: 'Server error categorizing transaction.' }); }
+    } catch (error) { res.status(500).json({ message: 'Server error categorizing transaction.' }); }
   }
 
   static async updateTransactionVendor(req, res) {
@@ -101,7 +140,7 @@ class TransactionController {
       const changes = await Transaction.updateVendor(id, vendor_id);
       if (changes === 0) { return res.status(404).json({ message: 'Transaction not found.' }); }
       res.status(200).json({ message: 'Transaction vendor updated successfully.' });
-    } catch (error) { console.error('Error updating transaction vendor:', error); res.status(500).json({ message: 'Server error updating transaction vendor.' }); }
+    } catch (error) { res.status(500).json({ message: 'Server error updating transaction vendor.' }); }
   }
 
   static async splitTransaction(req, res) {
@@ -122,7 +161,6 @@ class TransactionController {
       res.status(200).json({ message: 'Transaction split successfully.' });
     } catch (error) {
       await database.exec('ROLLBACK');
-      console.error("Error splitting transaction:", error);
       res.status(500).json({ message: error.message || 'Server error splitting transaction.' });
     }
   }

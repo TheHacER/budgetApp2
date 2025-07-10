@@ -5,7 +5,7 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 
 function BudgetGrid({ year, month }) {
-  const [categories, setCategories] = useState([]);
+  const [budgetData, setBudgetData] = useState([]);
   const [budgets, setBudgets] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -14,14 +14,11 @@ function BudgetGrid({ year, month }) {
     const fetchBudgetData = async () => {
       setLoading(true);
       try {
-        const [categoriesData, budgetsData] = await Promise.all([
-          api.getCategoriesWithSubcategories(),
-          api.getBudgetsByMonth(year, month)
-        ]);
-        setCategories(categoriesData);
+        const data = await api.getBudgetsByMonth(year, month);
+        setBudgetData(data);
         const budgetMap = {};
-        budgetsData.forEach(b => {
-          budgetMap[b.category_id] = b.amount;
+        data.forEach(b => {
+          budgetMap[b.category_id] = b.budgeted_amount;
         });
         setBudgets(budgetMap);
       } catch (err) {
@@ -38,11 +35,11 @@ function BudgetGrid({ year, month }) {
   };
 
   const handleSaveChanges = async () => {
-    const budgetsToSave = categories.map(cat => ({
-      category_id: cat.id,
+    const budgetsToSave = budgetData.map(cat => ({
+      category_id: cat.category_id,
       year,
       month,
-      amount: parseFloat(budgets[cat.id] || 0)
+      amount: parseFloat(budgets[cat.category_id] || 0)
     }));
     try {
       await api.setBudgetsBulk(budgetsToSave);
@@ -62,20 +59,25 @@ function BudgetGrid({ year, month }) {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[300px]">Category</TableHead>
+              <TableHead>Recurring Bills</TableHead>
               <TableHead>Budgeted Amount</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {categories.map((category) => (
-              <TableRow key={category.id}>
-                <TableCell className="font-medium">{category.name}</TableCell>
+            {budgetData.map((category) => (
+              <TableRow key={category.category_id}>
+                <TableCell className="font-medium">{category.category_name}</TableCell>
+                <TableCell className="text-muted-foreground">
+                  {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(category.recurring_bills_total || 0)}
+                </TableCell>
                 <TableCell>
                   <Input
                     type="number"
                     className="w-40"
                     placeholder="0.00"
-                    value={budgets[category.id] || ''}
-                    onChange={(e) => handleBudgetChange(category.id, e.target.value)}
+                    value={budgets[category.category_id] || ''}
+                    onChange={(e) => handleBudgetChange(category.category_id, e.target.value)}
+                    min={category.recurring_bills_total || 0}
                   />
                 </TableCell>
               </TableRow>

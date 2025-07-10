@@ -15,4 +15,8 @@ router.put('/:id/categorize', TransactionController.categorizeTransaction);
 router.put('/:id/vendor', TransactionController.updateTransactionVendor);
 router.post('/:id/split', TransactionController.splitTransaction);
 
+router.get('/ignored', TransactionController.getIgnoredTransactions);
+router.post('/ignored/:id/reinstate', TransactionController.reinstateTransaction);
+router.delete('/ignored/purge', TransactionController.purgeIgnoredTransactions);
+
 module.exports = router;

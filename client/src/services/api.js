@@ -49,35 +49,14 @@ export async function updateRecurringBill(id, billData) { return fetchApi(`/recu
 export async function deactivateRecurringBill(id) { return fetchApi(`/recurring-bills/${id}`, { method: 'DELETE' }); }
 export async function getBudgetsByMonth(year, month) { return fetchApi(`/budgets/${year}/${month}`); }
 export async function setBudgetsBulk(budgets) { return fetchApi('/budgets/bulk', { method: 'POST', body: JSON.stringify({ budgets }) }); }
-// === SAVINGS API ===
-
-export async function getAllSavingsAccounts() {
-  return fetchApi('/savings/accounts');
-}
-
-export async function createSavingsAccount(accountData) {
-  return fetchApi('/savings/accounts', { method: 'POST', body: JSON.stringify(accountData) });
-}
-
-export async function updateSavingsAccount(id, accountData) {
-  return fetchApi(`/savings/accounts/${id}`, { method: 'PUT', body: JSON.stringify(accountData) });
-}
-
-export async function deleteSavingsAccount(id) {
-  return fetchApi(`/savings/accounts/${id}`, { method: 'DELETE' });
-}
-
-export async function createSavingsGoal(goalData) {
-  return fetchApi('/savings/goals', { method: 'POST', body: JSON.stringify(goalData) });
-}
-
-export async function updateSavingsGoal(id, goalData) {
-  return fetchApi(`/savings/goals/${id}`, { method: 'PUT', body: JSON.stringify(goalData) });
-}
-
-export async function deleteSavingsGoal(id) {
-  return fetchApi(`/savings/goals/${id}`, { method: 'DELETE' });
-}
-export async function withdrawFromSavingsGoal(id, withdrawalData) {
-  return fetchApi(`/savings/goals/${id}/withdraw`, { method: 'POST', body: JSON.stringify(withdrawalData) });
-}
+export async function getAllSavingsAccounts() { return fetchApi('/savings/accounts'); }
+export async function createSavingsAccount(accountData) { return fetchApi('/savings/accounts', { method: 'POST', body: JSON.stringify(accountData) }); }
+export async function updateSavingsAccount(id, accountData) { return fetchApi(`/savings/accounts/${id}`, { method: 'PUT', body: JSON.stringify(accountData) }); }
+export async function deleteSavingsAccount(id) { return fetchApi(`/savings/accounts/${id}`, { method: 'DELETE' }); }
+export async function createSavingsGoal(goalData) { return fetchApi('/savings/goals', { method: 'POST', body: JSON.stringify(goalData) }); }
+export async function updateSavingsGoal(id, goalData) { return fetchApi(`/savings/goals/${id}`, { method: 'PUT', body: JSON.stringify(goalData) }); }
+export async function deleteSavingsGoal(id) { return fetchApi(`/savings/goals/${id}`, { method: 'DELETE' }); }
+export async function withdrawFromSavingsGoal(id, withdrawalData) { return fetchApi(`/savings/goals/${id}/withdraw`, { method: 'POST', body: JSON.stringify(withdrawalData) }); }
+export async function getIgnoredTransactions() { return fetchApi('/transactions/ignored'); }
+export async function reinstateTransaction(id) { return fetchApi(`/transactions/ignored/${id}/reinstate`, { method: 'POST' }); }
+export async function purgeIgnoredTransactions() { return fetchApi('/transactions/ignored/purge', { method: 'DELETE' }); }
