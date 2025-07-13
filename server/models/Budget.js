@@ -5,10 +5,15 @@ class Budget {
     const database = await db.openDb();
     await database.exec('BEGIN TRANSACTION');
     try {
-      const sql = `INSERT INTO budgets (category_id, year, month, amount) VALUES (?, ?, ?, ?) ON CONFLICT(category_id, year, month) DO UPDATE SET amount = excluded.amount;`;
+      const sql = `
+        INSERT INTO budgets (subcategory_id, year, month, amount, budget_type) 
+        VALUES (?, ?, ?, ?, ?) 
+        ON CONFLICT(subcategory_id, year, month) 
+        DO UPDATE SET amount = excluded.amount, budget_type = excluded.budget_type;
+      `;
       const stmt = await database.prepare(sql);
       for (const budget of budgets) {
-        await stmt.run(budget.category_id, budget.year, budget.month, parseFloat(budget.amount || 0));
+        await stmt.run(budget.subcategory_id, budget.year, budget.month, parseFloat(budget.amount || 0), budget.budget_type || 'allowance');
       }
       await stmt.finalize();
       await database.exec('COMMIT');
@@ -18,43 +23,50 @@ class Budget {
     }
   }
 
-  static async getCategoryBudgetsForMonth(year, month, startDate, endDate) {
+  static async getBudgetsBySubCategoryForMonth(year, month) {
     const database = await db.openDb();
     const sql = `
       SELECT
+        sc.id as subcategory_id,
+        sc.name as subcategory_name,
         c.id as category_id,
         c.name as category_name,
         COALESCE(b.amount, 0) as budgeted_amount,
-        COALESCE(rb_sum.total_recurring_bills, 0) as recurring_bills_total
-      FROM categories c
+        COALESCE(b.budget_type, 'allowance') as budget_type
+      FROM subcategories sc
+      JOIN categories c ON sc.category_id = c.id
       LEFT JOIN (
-        SELECT category_id, amount FROM budgets WHERE year = ? AND month = ?
-      ) b ON c.id = b.category_id
-      LEFT JOIN (
-        SELECT s.category_id, SUM(rb.amount) as total_recurring_bills
-        FROM recurring_bills rb
-        JOIN subcategories s ON rb.subcategory_id = s.id
-        WHERE 
-          rb.is_active = 1 AND
-          rb.start_date <= ? AND
-          (rb.end_date_is_indefinite = 1 OR rb.end_date IS NULL OR rb.end_date >= ?)
-        GROUP BY s.category_id
-      ) rb_sum ON c.id = rb_sum.category_id
-      ORDER BY c.name;
+        SELECT subcategory_id, amount, budget_type FROM budgets WHERE year = ? AND month = ?
+      ) b ON sc.id = b.subcategory_id
+      ORDER BY c.name, sc.name;
     `;
-    return await database.all(sql, [year, month, endDate, startDate]);
+    return await database.all(sql, [year, month]);
   }
 
-  static async addToBudget(year, month, category_id, amount) {
+  static async getPreviousMonthSurplus(subcategoryId, year, month) {
+    let prevMonth = month - 1;
+    let prevYear = year;
+    if (prevMonth === 0) {
+      prevMonth = 12;
+      prevYear = year - 1;
+    }
+    
     const database = await db.openDb();
-    const sql = `
-        INSERT INTO budgets (category_id, year, month, amount)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(category_id, year, month) DO UPDATE SET
-        amount = amount + excluded.amount;
+    const historySql = `
+        SELECT final_surplus_or_rollover 
+        FROM monthly_history 
+        WHERE subcategory_id = ? AND year = ? AND month = ? AND budget_type = 'rolling'
     `;
-    await database.run(sql, [category_id, year, month, amount]);
+    const history = await database.get(historySql, [subcategoryId, prevYear, prevMonth]);
+
+    return history ? history.final_surplus_or_rollover : 0;
   }
+
+   static async isMonthClosed(year, month) {
+    const database = await db.openDb();
+    const res = await database.get('SELECT 1 FROM monthly_history WHERE year = ? AND month = ? AND is_closed = 1 LIMIT 1', [year, month]);
+    return !!res;
+   }
 }
 
 module.exports = Budget;

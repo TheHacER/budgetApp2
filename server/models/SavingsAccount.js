@@ -11,28 +11,13 @@ class SavingsAccount {
 
   static async findAll() {
     const database = await db.openDb();
-    // CORRECTED: This query now correctly selects all fields for the nested goals.
-    const sql = `
-      SELECT 
-        sa.*,
-        (SELECT json_group_array(
-          json_object(
-            'id', sg.id, 
-            'account_id', sg.account_id,
-            'title', sg.title, 
-            'target_amount', sg.target_amount, 
-            'starting_balance', sg.starting_balance,
-            'current_amount', sg.current_amount, 
-            'target_date', sg.target_date, 
-            'priority', sg.priority
-          )
-        ) FROM savings_goals sg WHERE sg.account_id = sa.id) as goals
-      FROM savings_accounts sa
-    `;
-    const accounts = await database.all(sql);
+    const accounts = await database.all('SELECT * FROM savings_accounts');
+    const goals = await database.all('SELECT * FROM savings_goals');
+    
+    // Manually join in JavaScript to avoid SQL JSON issues
     return accounts.map(acc => ({
       ...acc,
-      goals: acc.goals ? JSON.parse(acc.goals) : []
+      goals: goals.filter(g => g.account_id === acc.id)
     }));
   }
 

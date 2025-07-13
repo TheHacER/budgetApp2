@@ -50,6 +50,24 @@ class CategoryController {
     }
   }
 
+  static async updateCategory(req, res) {
+    const { id } = req.params;
+    const { name, linked_savings_account_id } = req.body;
+    if (!name) {
+        return res.status(400).json({ message: 'Category name is required.' });
+    }
+    try {
+        const category = await Category.findById(id);
+        if (!category) {
+            return res.status(404).json({ message: 'Category not found.' });
+        }
+        const updatedCategory = await Category.update(id, { name, linked_savings_account_id });
+        res.status(200).json(updatedCategory);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error updating category.' });
+    }
+  }
+
   static async deleteCategory(req, res) {
     const { id } = req.params;
     try {

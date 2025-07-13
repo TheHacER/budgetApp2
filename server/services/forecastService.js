@@ -1,6 +1,6 @@
 const RecurringBill = require('../models/RecurringBill');
-const PlannedIncome = require('../models/PlannedIncome'); // New
-const { isWeekend, getPreviousWorkday, getHolidays } = require('./dateHelpers'); // Refactored for reuse
+const PlannedIncome = require('../models/PlannedIncome');
+const { getHolidays, getPreviousWorkday } = require('./dateHelpers');
 
 class ForecastService {
   static async generateForecast() {
@@ -20,11 +20,10 @@ class ForecastService {
       const currentDate = new Date(d);
       const isoDate = currentDate.toISOString().split('T')[0];
       let dailyOutflow = 0;
-      let dailyInflow = 0; // New
+      let dailyInflow = 0;
       const todaysBills = [];
-      const todaysIncomes = []; // New
+      const todaysIncomes = [];
 
-      // Process outflows
       for (const bill of activeBills) {
         let paymentDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), bill.day_of_month);
         if (paymentDate.getMonth() === currentDate.getMonth()) {
@@ -36,7 +35,6 @@ class ForecastService {
         }
       }
 
-      // Process inflows
       for (const income of activeIncomes) {
           let incomeDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), income.day_of_month);
            if (incomeDate.getMonth() === currentDate.getMonth()) {
@@ -53,9 +51,9 @@ class ForecastService {
 
       forecastDays.push({
         date: isoDate,
-        inflows: todaysIncomes, // New
+        inflows: todaysIncomes,
         outflows: todaysBills,
-        total_inflow: dailyInflow, // New
+        total_inflow: dailyInflow,
         total_outflow: dailyOutflow,
         running_balance: Math.round(currentBalance * 100) / 100
       });

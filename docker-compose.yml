@@ -1,6 +1,11 @@
 # =================================================================
-#  Docker Compose for Family Budget Management Tool (Stable)
+#  Docker Compose for Family Budget Management Tool (Corrected)
 # =================================================================
+
+# Define a network for our containers to communicate on
+networks:
+  budget-net:
+    driver: bridge
 
 services:
   # 1. The Backend Node.js/Express API Server
@@ -9,10 +14,12 @@ services:
       context: .
       dockerfile: ./deployment/Dockerfile.server
     container_name: budget_app_server
-    volumes:
-      # Only the database data is mounted, not the application code.
-      - budget_db_data:/usr/src/app/data/sqlite
     restart: unless-stopped
+    volumes:
+      - budget_db_data:/usr/src/app/data/sqlite
+    # Connect the server to our custom network
+    networks:
+      - budget-net
     environment:
       - NODE_ENV=production
 
@@ -23,11 +30,15 @@ services:
       dockerfile: ./deployment/Dockerfile.client
     container_name: budget_app_client
     ports:
-      # Expose the application on port 80 of your Raspberry Pi
+      # Expose the application on port 80 of your Mac
       - "80:80"
     restart: unless-stopped
+    # The client depends on the server being started
     depends_on:
       - server
+    # Connect the client to the same custom network
+    networks:
+      - budget-net
 
 volumes:
   budget_db_data: {}

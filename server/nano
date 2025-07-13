@@ -1,0 +1,78 @@
+// =================================================================
+//  Dashboard Controller (dashboardController.js)
+// =================================================================
+//  Handles the aggregation of data for the main dashboard.
+// =================================================================
+
+const Transaction = require('../models/Transaction');
+const Budget = require('../models/Budget');
+
+class DashboardController {
+  /**
+   * Gathers all data for the monthly summary dashboard.
+   */
+  static async getMonthlySummary(req, res) {
+    try {
+      // For now, we'll hardcode the current month. Later this will be dynamic.
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth() + 1; // getMonth() is 0-indexed
+
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+      const endDate = new Date(year, month, 0).toISOString().split('T')[0]; // Last day of current month
+
+      // --- Fetch all data in parallel ---
+      const [
+        monthlySummary,
+        spendingByCategory,
+        budgetedByCategory
+      ] = await Promise.all([
+        Transaction.getSummaryByDateRange(startDate, endDate),
+        Transaction.getSpendingByCategory(startDate, endDate),
+        Budget.getBudgetedByCategory(year, month)
+      ]);
+
+      // --- Combine budget and actual spending ---
+      const categoryMap = new Map();
+      budgetedByCategory.forEach(b => {
+        categoryMap.set(b.category_id, {
+          category_name: b.category_name,
+          budgeted: b.total_budgeted,
+          actual: 0
+        });
+      });
+
+      spendingByCategory.forEach(s => {
+        if (categoryMap.has(s.category_id)) {
+          categoryMap.get(s.category_id).actual = s.actual_spending;
+        } else {
+          // This handles spending in categories that have no budget set
+          categoryMap.set(s.category_id, {
+            category_name: s.category_name,
+            budgeted: 0,
+            actual: s.actual_spending
+          });
+        }
+      });
+      
+      const budgetVsActual = Array.from(categoryMap.values());
+
+      // --- Assemble the final dashboard object ---
+      const dashboardData = {
+        month_to_date_summary: {
+          ...monthlySummary,
+          surplus_deficit: monthlySummary.total_income - monthlySummary.total_spending
+        },
+        budget_vs_actual: budgetVsActual
+      };
+
+      res.status(200).json(dashboardData);
+
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      res.status(500).json({ message: 'Server error fetching dashboard data.' });
+    }
+  }
+}
+
+module.exports = DashboardController;

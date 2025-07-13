@@ -1,74 +1,88 @@
 const Transaction = require('../models/Transaction');
 const Budget = require('../models/Budget');
+const PlannedIncome = require('../models/PlannedIncome');
+const SavingsAccount = require('../models/SavingsAccount');
 const { createFinancialMonthService } = require('../services/financialMonthService');
-const AppSettings = require('../models/AppSettings');
+const ForecastService = require('../services/forecastService');
 
 class DashboardController {
-  static async getMonthlySummary(req, res) {
+  static async getDashboardData(req, res) {
     try {
-      const settings = await AppSettings.get();
-      if (!settings) {
-        throw new Error("App settings not found. Please complete initial setup.");
-      }
-
-      const today = new Date();
-      let year = today.getFullYear();
-      let month = today.getMonth() + 1; // getMonth() is 0-indexed, so add 1
-
-      // Logic to determine the correct financial month
-      // If today's date is on or after the fiscal start day, we are in the *next* financial month.
-      if (today.getDate() >= settings.fiscal_day_start) {
-        month += 1;
-        if (month > 12) {
-          month = 1;
-          year += 1;
-        }
-      }
-
       const financialMonthService = await createFinancialMonthService();
-      const { startDate, endDate } = financialMonthService.getFinancialMonthRange(year, month);
-
+      // This will get the range for the current financial month
+      const { year, month, startDate, endDate } = financialMonthService.getCurrentFinancialMonth(); 
+      
       const [
-        monthlySummary,
-        spendingByCategory,
-        categoryBudgets
+        allTransactions,
+        allBudgets,
+        allPlannedIncomes,
+        allSavingsAccounts,
+        twelveMonthForecast
       ] = await Promise.all([
-        Transaction.getSummaryByDateRange(startDate, endDate),
-        Transaction.getSpendingByCategory(startDate, endDate),
-        Budget.getCategoryBudgetsForMonth(year, month, startDate, endDate)
+        Transaction.findAllByDateRange(startDate, endDate),
+        Budget.getBudgetsBySubCategoryForMonth(year, month),
+        PlannedIncome.findAllActive(),
+        SavingsAccount.findAll(),
+        ForecastService.generateForecast()
       ]);
 
-      const categoryMap = new Map();
+      // --- Calculations ---
+      const totalIncome = allTransactions.filter(t => !t.is_debit).reduce((sum, t) => sum + t.amount, 0);
+      const totalSpending = allTransactions.filter(t => t.is_debit).reduce((sum, t) => sum + t.amount, 0);
+      
+      const plannedIncomeTotal = allPlannedIncomes.reduce((sum, i) => sum + i.amount, 0);
+      const totalBudgeted = allBudgets.reduce((sum, b) => sum + b.budgeted_amount, 0);
+      const plannedSurplus = plannedIncomeTotal - totalBudgeted;
 
-      categoryBudgets.forEach(b => {
-        categoryMap.set(b.category_id, {
-          category_name: b.category_name,
-          budgeted: b.budgeted_amount,
-          actual: 0
-        });
+      const receivedIncomes = allPlannedIncomes.map(pi => {
+        const received = allTransactions.some(t => !t.is_debit && t.description_original.toLowerCase().includes(pi.source_name.toLowerCase()));
+        return { ...pi, received };
       });
 
-      spendingByCategory.forEach(s => {
-        if (categoryMap.has(s.category_id)) {
-          categoryMap.get(s.category_id).actual = s.actual_spending;
-        } else {
-          categoryMap.set(s.category_id, {
-            category_name: s.category_name,
-            budgeted: 0,
-            actual: s.actual_spending
-          });
+      const budgetOverspends = allBudgets.reduce((acc, budget) => {
+        const spendingForSubcategory = allTransactions
+            .filter(t => t.is_debit && t.subcategory_id === budget.subcategory_id)
+            .reduce((sum, t) => sum + t.amount, 0);
+        
+        if (spendingForSubcategory > budget.budgeted_amount) {
+            acc += (spendingForSubcategory - budget.budgeted_amount);
         }
-      });
+        return acc;
+      }, 0);
 
-      const budgetVsActual = Array.from(categoryMap.values());
-      const surplus_deficit = monthlySummary.total_income - monthlySummary.total_spending;
+      const currentSurplus = plannedSurplus - budgetOverspends;
+      
+      // In-Month Cashflow
+      const inMonthCashflow = [];
+      let runningBalance = 0;
+      const daysInMonth = new Date(year, month, 0).getDate();
+
+      for (let day = 1; day <= daysInMonth; day++) {
+          const date = new Date(year, month - 1, day);
+          const isoDate = date.toISOString().split('T')[0];
+          
+          const dailyInflow = allTransactions.filter(t => !t.is_debit && t.transaction_date === isoDate).reduce((sum, t) => sum + t.amount, 0);
+          const dailyOutflow = allTransactions.filter(t => t.is_debit && t.transaction_date === isoDate).reduce((sum, t) => sum + t.amount, 0);
+
+          runningBalance += dailyInflow - dailyOutflow;
+          inMonthCashflow.push({ date: isoDate, actual: runningBalance });
+      }
 
       const dashboardData = {
-        month_to_date_summary: {
-          ...monthlySummary,
-          surplus_deficit: Math.round(surplus_deficit * 100) / 100
+        income: {
+            total: totalIncome,
+            breakdown: receivedIncomes,
         },
-        budget_vs_actual: budgetVsActual
+        budget: {
+            total: totalBudgeted
+        },
+        surplus: {
+            planned: plannedSurplus,
+            current: currentSurplus
+        },
+        inMonthCashflow,
+        twelveMonthForecast,
+        savingsGoals: allSavingsAccounts.flatMap(acc => acc.goals)
       };
 
       res.status(200).json(dashboardData);

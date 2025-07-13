@@ -20,6 +20,7 @@ const subcategoryRoutes = require('./routes/subcategories');
 const settingsRoutes = require('./routes/settings');
 const savingsGoalsRoutes = require('./routes/savingsGoals');
 const plannedIncomeRoutes = require('./routes/plannedIncome');
+const importProfileRoutes = require('./routes/importProfiles'); // <-- NEW
 
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -33,6 +34,7 @@ app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/savings', savingsGoalsRoutes);
 app.use('/api/planned-income', plannedIncomeRoutes);
+app.use('/api/import-profiles', importProfileRoutes); // <-- NEW
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 

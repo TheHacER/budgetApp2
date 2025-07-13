@@ -46,7 +46,6 @@ function SavingsGoalModal({ isOpen, goal, accounts, onClose, onSave }) {
             <DialogContent>
               <DialogHeader><DialogTitle>{goal?.id ? 'Edit' : 'Add'} Savings Goal</DialogTitle></DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 py-4">
-                <Input type="hidden" name="account_id" value={formData?.account_id} />
                 <div>
                     <Label htmlFor="account_id">Savings Account</Label>
                     <Select name="account_id" value={formData?.account_id?.toString()} onValueChange={(v) => handleSelectChange('account_id', v)} required>
@@ -56,7 +55,7 @@ function SavingsGoalModal({ isOpen, goal, accounts, onClose, onSave }) {
                 </div>
                 <div><Label htmlFor="title">Goal Title</Label><Input id="title" name="title" value={formData?.title || ''} onChange={handleChange} required /></div>
                 <div><Label htmlFor="target_amount">Target Amount (£)</Label><Input id="target_amount" name="target_amount" type="number" step="0.01" value={formData?.target_amount || ''} onChange={handleChange} required /></div>
-                <div><Label htmlFor="starting_balance">Starting Balance (£)</Label><Input id="starting_balance" name="starting_balance" type="number" step="0.01" value={formData?.starting_balance || '0.00'} onChange={handleChange} required /></div>
+                <div><Label htmlFor="current_amount">Current Balance (£)</Label><Input id="current_amount" name="current_amount" type="number" step="0.01" value={formData?.current_amount || '0.00'} onChange={handleChange} required /></div>
                 <div><Label htmlFor="target_date">Target Date</Label><Input id="target_date" name="target_date" type="date" value={formData?.target_date ? new Date(formData.target_date).toISOString().split('T')[0] : ''} onChange={handleChange} /></div>
                 <div>
                     <Label htmlFor="priority">Priority</Label>

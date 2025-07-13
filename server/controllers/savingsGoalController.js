@@ -83,17 +83,23 @@ class SavingsController {
 
     try {
       const goal = await SavingsGoal.findById(id);
-      if (!goal) { return res.status(404).json({ message: 'Savings goal not found.' }); }
+      if (!goal) {
+        return res.status(404).json({ message: 'Savings goal not found.' });
+      }
 
       const account = await SavingsAccount.findById(goal.account_id);
-      if (!account) { return res.status(404).json({ message: 'Associated savings account not found.' }); }
+      if (!account) {
+          return res.status(404).json({ message: 'Associated savings account not found.' });
+      }
 
-      if (withdrawalAmount > goal.current_amount) {
-          return res.status(400).json({ message: `Withdrawal amount cannot exceed the goal's current balance of ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(goal.current_amount)}` });
+      if (withdrawalAmount > account.current_balance) {
+          return res.status(400).json({ message: `Withdrawal amount cannot exceed the account balance of ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(account.current_balance)}` });
       }
 
       const parentCategory = await Subcategory.findParentCategory(subcategory_id);
-      if (!parentCategory) { return res.status(404).json({ message: 'Parent category not found for the selected subcategory.' }); }
+      if (!parentCategory) {
+          return res.status(404).json({ message: 'Parent category not found for the selected subcategory.' });
+      }
 
       const settings = await AppSettings.get();
       if (!settings) { throw new Error("App settings not found."); }
@@ -113,7 +119,6 @@ class SavingsController {
 
       try {
         await SavingsAccount.updateBalance(goal.account_id, -withdrawalAmount);
-        await SavingsGoal.updateBalance(goal.id, -withdrawalAmount);
         await Budget.addToBudget(year, month, parentCategory.category_id, withdrawalAmount);
 
         await database.exec('COMMIT');

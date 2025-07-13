@@ -9,6 +9,8 @@ const upload = multer({ dest: 'data/uploads/' });
 router.use(isAuthenticated);
 
 router.post('/upload', upload.single('transactionsFile'), TransactionController.uploadTransactions);
+router.post('/apply-rules', TransactionController.applyRules);
+
 router.get('/', TransactionController.getAllTransactions);
 router.get('/uncategorized', TransactionController.getUncategorizedTransactions);
 router.put('/:id/categorize', TransactionController.categorizeTransaction);

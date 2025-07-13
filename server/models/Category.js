@@ -20,6 +20,7 @@ class Category {
       SELECT
         c.id,
         c.name,
+        c.linked_savings_account_id,
         (
           SELECT json_group_array(
             json_object('id', s.id, 'name', s.name)
@@ -44,11 +45,11 @@ class Category {
     return await database.get(sql, [id]);
   }
 
-  static async update(id, name) {
+  static async update(id, { name, linked_savings_account_id }) {
     const database = await db.openDb();
-    const sql = `UPDATE categories SET name = ? WHERE id = ?`;
-    await database.run(sql, [name, id]);
-    return { id, name };
+    const sql = `UPDATE categories SET name = ?, linked_savings_account_id = ? WHERE id = ?`;
+    await database.run(sql, [name, linked_savings_account_id, id]);
+    return { id, name, linked_savings_account_id };
   }
 
   static async delete(id) {

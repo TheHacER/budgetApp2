@@ -5,6 +5,7 @@ const isAuthenticated = require('../middleware/isAuthenticated');
 
 router.use(isAuthenticated);
 
-router.get('/monthly-summary', DashboardController.getMonthlySummary);
+// This is the new, single endpoint for the rebuilt dashboard
+router.get('/', DashboardController.getDashboardData);
 
 module.exports = router;

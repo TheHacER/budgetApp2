@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import * as api from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -13,7 +13,7 @@ function InitialSetupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login } = useAuth();
+  const { login, reloadSettings } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -23,11 +23,27 @@ function InitialSetupPage() {
       return;
     }
     try {
+      // Step 1: Register the first user. The API now prevents further registrations.
       await api.register(email, password);
+
+      // Step 2: Log in to get an auth token for subsequent requests.
+      const loginData = await api.login(email, password);
+      localStorage.setItem('authToken', loginData.token); // Manually set token for the next call
+
+      // Step 3: Save the initial application settings.
+      await api.saveAppSettings({
+        jurisdiction,
+        fiscal_day_start: parseInt(fiscalDayStart, 10),
+      });
+
+      // Step 4: Use the context's reload function to refresh the app state.
+      // This will set the new token in the context and fetch the completed settings.
       await login(email, password);
-      await api.saveAppSettings({ jurisdiction, fiscal_day_start: parseInt(fiscalDayStart, 10) });
+      await reloadSettings();
+
     } catch (err) {
       setError(err.message);
+      localStorage.removeItem('authToken'); // Clean up token on failure
     }
   };
 
@@ -37,7 +53,7 @@ function InitialSetupPage() {
         <CardHeader>
           <CardTitle className="text-2xl">Initial Application Setup</CardTitle>
           <CardDescription>
-            Welcome! Please configure your admin account and one-time financial settings.
+            Welcome! Please create your admin account and configure your financial calendar.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -72,6 +88,7 @@ function InitialSetupPage() {
                 placeholder="e.g., 28"
                 value={fiscalDayStart}
                 onChange={(e) => setFiscalDayStart(e.target.value)}
+                required
               />
             </div>
 

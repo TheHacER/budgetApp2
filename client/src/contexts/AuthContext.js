@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../services/api';
 
@@ -10,30 +10,32 @@ export function AuthProvider({ children }) {
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const initialize = async () => {
-      setIsLoading(true);
-      if (token) {
-        try {
-          const settings = await api.getAppSettings();
-          setAppSettings(settings);
-        } catch (error) {
-          console.error("Initialization Error:", error);
-          setToken(null);
-          setAppSettings(null);
-          localStorage.removeItem('authToken');
-        }
-      }
+  const initialize = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      // This API call now correctly checks if the app is set up first.
+      const settings = await api.getAppSettings();
+      setAppSettings(settings);
+    } catch (error) {
+      console.error("Initialization Error:", error);
+      // If this fails, it's a server error, not a login issue.
+      // We clear the token to be safe.
+      setToken(null);
+      localStorage.removeItem('authToken');
+    } finally {
       setIsLoading(false);
-    };
+    }
+  }, []);
+
+  useEffect(() => {
     initialize();
-  }, [token]);
+  }, [token, initialize]);
 
   const login = async (email, password) => {
     const data = await api.login(email, password);
     if (data && data.token) {
       localStorage.setItem('authToken', data.token);
-      setToken(data.token);
+      setToken(data.token); // This will trigger the useEffect to re-run and get settings.
     } else {
       throw new Error('Login failed. Please check your credentials.');
     }
@@ -41,22 +43,8 @@ export function AuthProvider({ children }) {
 
   const logout = () => {
     setToken(null);
-    setAppSettings(null);
     localStorage.removeItem('authToken');
     navigate('/login');
-  };
-
-  const reloadSettings = async () => {
-    setIsLoading(true);
-    if (token) {
-      try {
-        const settings = await api.getAppSettings();
-        setAppSettings(settings);
-      } catch (error) {
-        console.error("Failed to reload settings", error);
-      }
-    }
-    setIsLoading(false);
   };
 
   const value = {
@@ -66,12 +54,12 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!token,
     appSettings,
     isLoading,
-    reloadSettings,
+    reloadSettings: initialize // Function to re-run initialization after setup.
   };
 
   return (
     <AuthContext.Provider value={value}>
-      {!isLoading && children}
+      {children}
     </AuthContext.Provider>
   );
 }
