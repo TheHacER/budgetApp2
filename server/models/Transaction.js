@@ -7,16 +7,25 @@ class Transaction {
     const result = await database.get(sql, [tx.transaction_date, tx.amount, tx.is_debit, tx.description_original]);
     return !!result;
   }
+  
+  static async create(tx) {
+    const database = await db.openDb();
+    const type = tx.is_debit ? 'expense' : 'income'; // Set default type
+    const sql = `INSERT INTO transactions (transaction_date, description_original, amount, is_debit, source_account, vendor_id, subcategory_id, transaction_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    await database.run(sql, tx.transaction_date, tx.description_original, tx.amount, tx.is_debit, tx.source_account, tx.vendor_id, tx.subcategory_id, type);
+  }
+
 
   static async bulkCreate(transactions) {
     if (transactions.length === 0) return;
     const database = await db.openDb();
     await database.exec('BEGIN TRANSACTION');
     try {
-      const sql = `INSERT INTO transactions (transaction_date, description_original, amount, is_debit, source_account, vendor_id, subcategory_id) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+      const sql = `INSERT INTO transactions (transaction_date, description_original, amount, is_debit, source_account, vendor_id, subcategory_id, transaction_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
       const stmt = await database.prepare(sql);
       for (const tx of transactions) {
-        await stmt.run(tx.transaction_date, tx.description_original, tx.amount, tx.is_debit, tx.source_account, tx.vendor_id, tx.subcategory_id);
+        const type = tx.is_debit ? 'expense' : 'income'; // Set default type
+        await stmt.run(tx.transaction_date, tx.description_original, tx.amount, tx.is_debit, tx.source_account, tx.vendor_id, tx.subcategory_id, type);
       }
       await stmt.finalize();
       await database.exec('COMMIT');
@@ -60,15 +69,21 @@ class Transaction {
     return await database.all('SELECT * FROM transactions WHERE subcategory_id IS NULL AND is_split = 0 ORDER BY transaction_date DESC');
   }
 
-  static async updateCategory(transactionId, subcategoryId) {
-    const database = await db.openDb();
+  static async updateCategory(transactionId, subcategoryId, dbInstance) {
+    const database = dbInstance || await db.openDb();
     await database.run('DELETE FROM split_transactions WHERE transaction_id = ?', [transactionId]);
     const result = await database.run('UPDATE transactions SET subcategory_id = ?, is_split = 0 WHERE id = ?', [subcategoryId, transactionId]);
     return result.changes;
   }
+  
+  static async updateType(transactionId, transactionType, dbInstance) {
+    const database = dbInstance || await db.openDb();
+    const result = await database.run('UPDATE transactions SET transaction_type = ? WHERE id = ?', [transactionType, transactionId]);
+    return result.changes;
+  }
 
-  static async updateVendor(transactionId, vendorId) {
-    const database = await db.openDb();
+  static async updateVendor(transactionId, vendorId, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const result = await database.run('UPDATE transactions SET vendor_id = ? WHERE id = ?', [vendorId, transactionId]);
     return result.changes;
   }
@@ -81,7 +96,7 @@ class Transaction {
   
   static async getSummaryByDateRange(startDate, endDate) {
     const database = await db.openDb();
-    const result = await database.get('SELECT SUM(CASE WHEN is_debit = 1 THEN amount ELSE 0 END) as total_spending, SUM(CASE WHEN is_debit = 0 THEN amount ELSE 0 END) as total_income FROM transactions WHERE transaction_date BETWEEN ? AND ?', [startDate, endDate]);
+    const result = await database.get("SELECT SUM(CASE WHEN is_debit = 1 THEN amount ELSE 0 END) as total_spending, SUM(CASE WHEN is_debit = 0 AND transaction_type = 'income' THEN amount ELSE 0 END) as total_income FROM transactions WHERE transaction_date BETWEEN ? AND ?", [startDate, endDate]);
     return { total_spending: result.total_spending || 0, total_income: result.total_income || 0 };
   }
   
@@ -91,21 +106,35 @@ class Transaction {
       SELECT
           c.id as category_id,
           c.name as category_name,
-          SUM(s.amount) as actual_spending
-      FROM (
-          SELECT s.category_id, t.amount
-          FROM transactions t
-          JOIN subcategories s ON t.subcategory_id = s.id
-          WHERE t.is_debit = 1 AND t.is_split = 0 AND t.transaction_date BETWEEN ? AND ?
-          UNION ALL
-          SELECT s.category_id, st.amount
-          FROM split_transactions st
-          JOIN transactions t_split ON st.transaction_id = t_split.id
-          JOIN subcategories s ON st.subcategory_id = s.id
-          WHERE t_split.is_debit = 1 AND t_split.transaction_date BETWEEN ? AND ?
-      ) AS s
+          SUM(
+            CASE 
+              WHEN t.is_debit = 1 THEN t.amount 
+              WHEN t.is_debit = 0 AND t.transaction_type = 'refund' THEN -t.amount
+              ELSE 0 
+            END
+          ) as actual_spending
+      FROM transactions t
+      JOIN subcategories s ON t.subcategory_id = s.id
       JOIN categories c ON s.category_id = c.id
+      WHERE t.is_split = 0 
+        AND t.subcategory_id IS NOT NULL
+        AND (t.is_debit = 1 OR t.transaction_type = 'refund')
+        AND t.transaction_date BETWEEN ? AND ?
       GROUP BY c.id, c.name
+      
+      UNION ALL
+
+      SELECT
+          c.id as category_id,
+          c.name as category_name,
+          SUM(st.amount) as actual_spending
+      FROM split_transactions st
+      JOIN transactions t_split ON st.transaction_id = t_split.id
+      JOIN subcategories s ON st.subcategory_id = s.id
+      JOIN categories c ON s.category_id = c.id
+      WHERE t_split.is_debit = 1 AND t_split.transaction_date BETWEEN ? AND ?
+      GROUP BY c.id, c.name
+
       ORDER BY actual_spending DESC;
     `;
     return await database.all(sql, [startDate, endDate, startDate, endDate]);
@@ -113,16 +142,39 @@ class Transaction {
   
   static async getSpendingBySubCategory(startDate, endDate) {
     const database = await db.openDb();
-    const sql = `
-        SELECT
-            s.id as subcategory_id,
-            SUM(t.amount) as actual_spending
-        FROM transactions t
-        JOIN subcategories s ON t.subcategory_id = s.id
-        WHERE t.is_debit = 1 AND t.is_split = 0 AND t.transaction_date BETWEEN ? AND ?
-        GROUP BY s.id
+     const sql = `
+      SELECT
+          s.id as subcategory_id,
+          s.name as subcategory_name,
+          c.id as category_id,
+          c.name as category_name,
+          COALESCE(SUM(spend.amount), 0) as actual_spending
+      FROM subcategories s
+      JOIN categories c ON s.category_id = c.id
+      LEFT JOIN (
+          SELECT 
+            t.subcategory_id, 
+            CASE 
+              WHEN t.is_debit = 1 THEN t.amount 
+              WHEN t.is_debit = 0 AND t.transaction_type = 'refund' THEN -t.amount
+            END as amount
+          FROM transactions t
+          WHERE t.is_split = 0 AND (t.is_debit = 1 OR t.transaction_type = 'refund') AND t.transaction_date BETWEEN ? AND ?
+          
+          UNION ALL
+          
+          SELECT 
+            st.subcategory_id, 
+            st.amount
+          FROM split_transactions st
+          JOIN transactions t_split ON st.transaction_id = t_split.id
+          WHERE t_split.is_debit = 1 AND t_split.transaction_date BETWEEN ? AND ?
+
+      ) AS spend ON s.id = spend.subcategory_id
+      GROUP BY s.id, s.name, c.id, c.name
+      ORDER BY c.name, s.name;
     `;
-    return await database.all(sql, [startDate, endDate]);
+    return await database.all(sql, [startDate, endDate, startDate, endDate]);
   }
 
   static async getTopVendorsByTransactionCount(startDate, endDate) {

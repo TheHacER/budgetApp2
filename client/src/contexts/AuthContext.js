@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../services/api';
 
@@ -8,18 +8,19 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('authToken'));
   const [appSettings, setAppSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [initError, setInitError] = useState(null);
   const navigate = useNavigate();
 
-  const initialize = useCallback(async () => {
+  const initializeApp = useCallback(async () => {
     setIsLoading(true);
+    setInitError(null);
     try {
-      // This API call now correctly checks if the app is set up first.
       const settings = await api.getAppSettings();
       setAppSettings(settings);
     } catch (error) {
       console.error("Initialization Error:", error);
-      // If this fails, it's a server error, not a login issue.
-      // We clear the token to be safe.
+      setInitError(error.message || 'Failed to connect to the server. Please ensure it is running and try again.');
+      setAppSettings(null);
       setToken(null);
       localStorage.removeItem('authToken');
     } finally {
@@ -28,14 +29,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    initialize();
-  }, [token, initialize]);
+    initializeApp();
+  }, [initializeApp]);
 
   const login = async (email, password) => {
     const data = await api.login(email, password);
     if (data && data.token) {
       localStorage.setItem('authToken', data.token);
-      setToken(data.token); // This will trigger the useEffect to re-run and get settings.
+      setToken(data.token);
+      await initializeApp(); // Re-fetch settings after a successful login
     } else {
       throw new Error('Login failed. Please check your credentials.');
     }
@@ -44,6 +46,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     setToken(null);
     localStorage.removeItem('authToken');
+    setAppSettings(null);
     navigate('/login');
   };
 
@@ -54,7 +57,8 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!token,
     appSettings,
     isLoading,
-    reloadSettings: initialize // Function to re-run initialization after setup.
+    initError,
+    initializeApp
   };
 
   return (

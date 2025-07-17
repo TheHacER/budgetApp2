@@ -174,7 +174,7 @@ function TransactionsPage() {
       alert("No import profiles found. Please create one in Settings > Import Profiles first.");
       return;
     }
-    setSelectedProfileId(importProfiles[0].id.toString());
+    setSelectedProfileId(importProfiles.length > 0 ? importProfiles[0].id.toString() : '');
     setIsImportModalOpen(true);
   };
 
@@ -232,7 +232,7 @@ function TransactionsPage() {
         <Tabs defaultValue="all-transactions">
             <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="all-transactions">All Transactions</TabsTrigger><TabsTrigger value="ignored">Ignored Duplicates</TabsTrigger></TabsList>
             <TabsContent value="all-transactions">
-                 <Accordion type="single" collapsible defaultValue={Object.keys(groupedTransactions)[0]} className="w-full space-y-4">
+                 <Accordion type="multiple" defaultValue={Object.keys(groupedTransactions).slice(0, 1)} className="w-full space-y-4">
                     {Object.keys(groupedTransactions).map(month => (
                         <AccordionItem key={month} value={month}>
                             <AccordionTrigger className="text-xl font-semibold p-4 bg-muted rounded-md">{month}</AccordionTrigger>
@@ -246,7 +246,7 @@ function TransactionsPage() {
       </div>
 
       <CategorizationModal transaction={transactionToCategorize} allSubcategories={allSubcategories} allVendors={allVendors} onClose={() => setTransactionToCategorize(null)} onSave={fetchPageData} />
-      <SplitTransactionModal transaction={transactionToSplit} allSubcategories={allSubcategories} onClose={() => setTransactionToSplit(null)} onSave={fetchPageData} />
+      <SplitTransactionModal transaction={transactionToSplit} allSubcategories={allSubcategories} allVendors={allVendors} onClose={() => setTransactionToSplit(null)} onSave={fetchPageData} />
       
       {isRecurringModalOpen && (
           <RecurringBillsManager isOpen={isRecurringModalOpen} onClose={() => setIsRecurringModalOpen(false)} billToCreateFromTx={transactionToMakeRecurring} onSave={fetchPageData} />

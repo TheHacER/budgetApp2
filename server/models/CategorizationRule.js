@@ -7,8 +7,8 @@ class CategorizationRule {
     return await database.get(sql, [vendorId]);
   }
 
-  static async createOrUpdateRule(vendorId, subcategoryId) {
-    const database = await db.openDb();
+  static async createOrUpdateRule(vendorId, subcategoryId, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const sql = `
       INSERT INTO categorization_rules (vendor_id, subcategory_id)
       VALUES (?, ?)

@@ -23,14 +23,14 @@ class SavingsGoal {
     return await database.run(sql, [id]);
   }
 
-  static async findById(id) {
-    const database = await db.openDb();
+  static async findById(id, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const sql = `SELECT * FROM savings_goals WHERE id = ?`;
     return await database.get(sql, [id]);
   }
 
-  static async updateBalance(id, amount) {
-    const database = await db.openDb();
+  static async updateBalance(id, amount, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const sql = `UPDATE savings_goals SET current_amount = current_amount + ? WHERE id = ?`;
     await database.run(sql, [amount, id]);
   }

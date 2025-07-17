@@ -184,93 +184,68 @@ const path = require('path');
 
 const DB_PATH = path.join(__dirname, '..', 'data', 'sqlite', 'budget.db');
 
-async function openDb() { return open({ filename: DB_PATH, driver: sqlite3.Database }); }
+let dbInstance = null; // Singleton instance
+
+async function openDb() {
+  if (dbInstance) {
+    return dbInstance;
+  }
+  dbInstance = await open({
+    filename: DB_PATH,
+    driver: sqlite3.Database
+  });
+  return dbInstance;
+}
+
+// New function to close the DB connection
+async function closeDb() {
+    if (dbInstance) {
+        await dbInstance.close();
+        dbInstance = null;
+        console.log('Database connection closed.');
+    }
+}
+
 
 async function migrate(db) {
   const schema = `
     CREATE TABLE IF NOT EXISTS users ( id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
-
     CREATE TABLE IF NOT EXISTS savings_accounts ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, institution TEXT, account_number TEXT, current_balance REAL NOT NULL DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
-
-    CREATE TABLE IF NOT EXISTS categories ( 
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        name TEXT NOT NULL UNIQUE, 
-        linked_savings_account_id INTEGER,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (linked_savings_account_id) REFERENCES savings_accounts (id) ON DELETE SET NULL
-    );
-
+    CREATE TABLE IF NOT EXISTS categories ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, linked_savings_account_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (linked_savings_account_id) REFERENCES savings_accounts (id) ON DELETE SET NULL );
     CREATE TABLE IF NOT EXISTS subcategories ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, category_id INTEGER NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (category_id) REFERENCES categories (id) ON DELETE CASCADE, UNIQUE(name, category_id) );
-
     CREATE TABLE IF NOT EXISTS vendors ( id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
-
-    CREATE TABLE IF NOT EXISTS transactions ( id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_date DATE NOT NULL, description_original TEXT NOT NULL, amount REAL NOT NULL, is_debit BOOLEAN NOT NULL, vendor_id INTEGER, subcategory_id INTEGER, is_recurring BOOLEAN DEFAULT 0, is_split BOOLEAN DEFAULT 0, notes TEXT, source_account TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (vendor_id) REFERENCES vendors (id) ON DELETE SET NULL, FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE SET NULL );
-
-    CREATE TABLE IF NOT EXISTS split_transactions ( id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_id INTEGER NOT NULL, subcategory_id INTEGER NOT NULL, amount REAL NOT NULL, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE, FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE CASCADE );
-
-    CREATE TABLE IF NOT EXISTS recurring_bills ( id INTEGER PRIMARY KEY AUTOINCREMENT, vendor_id INTEGER NOT NULL, subcategory_id INTEGER NOT NULL, amount REAL NOT NULL, day_of_month INTEGER NOT NULL, is_active BOOLEAN DEFAULT 1, start_date DATE NOT NULL, end_date DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (vendor_id) REFERENCES vendors (id), FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) );
-
-    CREATE TABLE IF NOT EXISTS budgets ( 
+    CREATE TABLE IF NOT EXISTS transactions ( 
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        subcategory_id INTEGER NOT NULL, 
-        month INTEGER NOT NULL, 
-        year INTEGER NOT NULL, 
+        transaction_date DATE NOT NULL, 
+        description_original TEXT NOT NULL, 
         amount REAL NOT NULL, 
-        budget_type TEXT CHECK(budget_type IN ('allowance', 'rolling')) NOT NULL DEFAULT 'allowance',
+        is_debit BOOLEAN NOT NULL, 
+        vendor_id INTEGER, 
+        subcategory_id INTEGER, 
+        is_split BOOLEAN DEFAULT 0, 
+        notes TEXT, 
+        source_account TEXT, 
+        transaction_type TEXT NOT NULL DEFAULT 'expense',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
-        UNIQUE(subcategory_id, month, year), 
-        FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE CASCADE 
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
+        FOREIGN KEY (vendor_id) REFERENCES vendors (id) ON DELETE SET NULL, 
+        FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE SET NULL 
     );
-
+    CREATE TABLE IF NOT EXISTS split_transactions ( id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_id INTEGER NOT NULL, subcategory_id INTEGER NOT NULL, amount REAL NOT NULL, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE, FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE CASCADE );
+    CREATE TABLE IF NOT EXISTS recurring_bills ( id INTEGER PRIMARY KEY AUTOINCREMENT, vendor_id INTEGER NOT NULL, subcategory_id INTEGER NOT NULL, amount REAL NOT NULL, day_of_month INTEGER NOT NULL, is_active BOOLEAN DEFAULT 1, start_date DATE NOT NULL, end_date DATE, notes TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (vendor_id) REFERENCES vendors (id), FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) );
+    CREATE TABLE IF NOT EXISTS budgets ( id INTEGER PRIMARY KEY AUTOINCREMENT, subcategory_id INTEGER NOT NULL, month INTEGER NOT NULL, year INTEGER NOT NULL, amount REAL NOT NULL, budget_type TEXT CHECK(budget_type IN ('allowance', 'rolling')) NOT NULL DEFAULT 'allowance', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, UNIQUE(subcategory_id, month, year), FOREIGN KEY (subcategory_id) REFERENCES subcategories (id) ON DELETE CASCADE );
     CREATE TABLE IF NOT EXISTS app_settings ( id INTEGER PRIMARY KEY CHECK (id = 1), fiscal_day_start INTEGER NOT NULL, jurisdiction TEXT NOT NULL, setup_complete BOOLEAN DEFAULT 0 );
-
     CREATE TABLE IF NOT EXISTS public_holidays ( id INTEGER PRIMARY KEY AUTOINCREMENT, holiday_date DATE NOT NULL UNIQUE, name TEXT NOT NULL );
-
     CREATE TABLE IF NOT EXISTS savings_goals ( id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL, title TEXT NOT NULL, target_amount REAL NOT NULL, current_amount REAL NOT NULL DEFAULT 0, target_date DATE, priority TEXT CHECK(priority IN ('high', 'medium', 'low')) NOT NULL DEFAULT 'medium', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (account_id) REFERENCES savings_accounts (id) ON DELETE CASCADE );
-
     CREATE TABLE IF NOT EXISTS ignored_transactions ( id INTEGER PRIMARY KEY AUTOINCREMENT, transaction_date DATE NOT NULL, description_original TEXT NOT NULL, amount REAL NOT NULL, is_debit BOOLEAN NOT NULL, source_account TEXT, reason TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
-
     CREATE TABLE IF NOT EXISTS planned_income ( id INTEGER PRIMARY KEY AUTOINCREMENT, source_name TEXT NOT NULL, amount REAL NOT NULL, day_of_month INTEGER NOT NULL, is_active BOOLEAN DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
-
-    CREATE TABLE IF NOT EXISTS categorization_rules (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        vendor_id INTEGER NOT NULL UNIQUE,
-        subcategory_id INTEGER NOT NULL,
-        FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE,
-        FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS monthly_history (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        year INTEGER NOT NULL,
-        month INTEGER NOT NULL,
-        subcategory_id INTEGER NOT NULL,
-        budgeted_amount REAL NOT NULL,
-        actual_spend REAL NOT NULL,
-        budget_type TEXT NOT NULL,
-        final_surplus_or_rollover REAL NOT NULL,
-        reconciled_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        is_closed BOOLEAN DEFAULT 1,
-        UNIQUE(year, month, subcategory_id),
-        FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS import_profiles (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        profile_name TEXT NOT NULL UNIQUE,
-        date_col TEXT NOT NULL,
-        description_col TEXT NOT NULL,
-        amount_col TEXT,
-        debit_col TEXT,
-        credit_col TEXT,
-        date_format TEXT
-    );
-
+    CREATE TABLE IF NOT EXISTS categorization_rules ( id INTEGER PRIMARY KEY AUTOINCREMENT, vendor_id INTEGER NOT NULL UNIQUE, subcategory_id INTEGER NOT NULL, FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE, FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE );
+    CREATE TABLE IF NOT EXISTS monthly_history ( id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER NOT NULL, month INTEGER NOT NULL, subcategory_id INTEGER NOT NULL, budgeted_amount REAL NOT NULL, actual_spend REAL NOT NULL, budget_type TEXT NOT NULL, final_surplus_or_rollover REAL NOT NULL, reconciled_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_closed BOOLEAN DEFAULT 1, UNIQUE(year, month, subcategory_id), FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE );
+    CREATE TABLE IF NOT EXISTS import_profiles ( id INTEGER PRIMARY KEY AUTOINCREMENT, profile_name TEXT NOT NULL UNIQUE, date_col TEXT NOT NULL, description_col TEXT NOT NULL, amount_col TEXT, debit_col TEXT, credit_col TEXT, date_format TEXT );
   `;
   await db.exec(schema);
 }
-module.exports = { openDb, migrate };
-
+module.exports = { openDb, migrate, closeDb }; // Export the new function
 --- FILE: ./server/server.js ---
 const express = require('express');
 const cors = require('cors');
@@ -282,6 +257,7 @@ const PORT = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
+// --- API Routes ---
 const authRoutes = require('./routes/auth');
 const categoryRoutes = require('./routes/categories');
 const vendorRoutes = require('./routes/vendors');
@@ -294,7 +270,8 @@ const subcategoryRoutes = require('./routes/subcategories');
 const settingsRoutes = require('./routes/settings');
 const savingsGoalsRoutes = require('./routes/savingsGoals');
 const plannedIncomeRoutes = require('./routes/plannedIncome');
-const importProfileRoutes = require('./routes/importProfiles'); // <-- NEW
+const importProfileRoutes = require('./routes/importProfiles');
+const backupRoutes = require('./routes/backup'); // <-- NEW
 
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -308,7 +285,8 @@ app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/savings', savingsGoalsRoutes);
 app.use('/api/planned-income', plannedIncomeRoutes);
-app.use('/api/import-profiles', importProfileRoutes); // <-- NEW
+app.use('/api/import-profiles', importProfileRoutes);
+app.use('/api/backup', backupRoutes); // <-- NEW
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -340,26 +318,13 @@ class SavingsAccount {
 
   static async findAll() {
     const database = await db.openDb();
-    const sql = `
-      SELECT 
-        sa.*,
-        (SELECT json_group_array(
-          json_object(
-            'id', sg.id, 
-            'account_id', sg.account_id,
-            'title', sg.title, 
-            'target_amount', sg.target_amount, 
-            'current_amount', sg.current_amount, 
-            'target_date', sg.target_date, 
-            'priority', sg.priority
-          )
-        ) FROM savings_goals sg WHERE sg.account_id = sa.id) as goals
-      FROM savings_accounts sa
-    `;
-    const accounts = await database.all(sql);
+    const accounts = await database.all('SELECT * FROM savings_accounts');
+    const goals = await database.all('SELECT * FROM savings_goals');
+    
+    // Manually join in JavaScript to avoid potential SQL JSON issues in some environments
     return accounts.map(acc => ({
       ...acc,
-      goals: acc.goals ? JSON.parse(acc.goals) : []
+      goals: goals.filter(g => g.account_id === acc.id)
     }));
   }
 
@@ -379,12 +344,13 @@ class SavingsAccount {
 
   static async delete(id) {
     const database = await db.openDb();
+    // This will cascade and delete related goals due to the database schema
     const sql = `DELETE FROM savings_accounts WHERE id = ?`;
     return await database.run(sql, [id]);
   }
 
-  static async updateBalance(id, amount) {
-    const database = await db.openDb();
+  static async updateBalance(id, amount, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const sql = `UPDATE savings_accounts SET current_balance = current_balance + ? WHERE id = ?`;
     await database.run(sql, [amount, id]);
   }
@@ -428,16 +394,25 @@ class Transaction {
     const result = await database.get(sql, [tx.transaction_date, tx.amount, tx.is_debit, tx.description_original]);
     return !!result;
   }
+  
+  static async create(tx) {
+    const database = await db.openDb();
+    const type = tx.is_debit ? 'expense' : 'income'; // Set default type
+    const sql = `INSERT INTO transactions (transaction_date, description_original, amount, is_debit, source_account, vendor_id, subcategory_id, transaction_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+    await database.run(sql, tx.transaction_date, tx.description_original, tx.amount, tx.is_debit, tx.source_account, tx.vendor_id, tx.subcategory_id, type);
+  }
+
 
   static async bulkCreate(transactions) {
     if (transactions.length === 0) return;
     const database = await db.openDb();
     await database.exec('BEGIN TRANSACTION');
     try {
-      const sql = `INSERT INTO transactions (transaction_date, description_original, amount, is_debit, source_account, vendor_id, subcategory_id) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+      const sql = `INSERT INTO transactions (transaction_date, description_original, amount, is_debit, source_account, vendor_id, subcategory_id, transaction_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
       const stmt = await database.prepare(sql);
       for (const tx of transactions) {
-        await stmt.run(tx.transaction_date, tx.description_original, tx.amount, tx.is_debit, tx.source_account, tx.vendor_id, tx.subcategory_id);
+        const type = tx.is_debit ? 'expense' : 'income'; // Set default type
+        await stmt.run(tx.transaction_date, tx.description_original, tx.amount, tx.is_debit, tx.source_account, tx.vendor_id, tx.subcategory_id, type);
       }
       await stmt.finalize();
       await database.exec('COMMIT');
@@ -461,6 +436,16 @@ class Transaction {
     return await database.all(sql);
   }
 
+  static async findAllByDateRange(startDate, endDate) {
+    const database = await db.openDb();
+    const sql = `
+      SELECT * FROM transactions
+      WHERE transaction_date BETWEEN ? AND ?
+      ORDER BY transaction_date ASC
+    `;
+    return await database.all(sql, [startDate, endDate]);
+  }
+
   static async findById(id, dbInstance) {
     const database = dbInstance || await db.openDb();
     return await database.get('SELECT * FROM transactions WHERE id = ?', [id]);
@@ -473,13 +458,20 @@ class Transaction {
 
   static async updateCategory(transactionId, subcategoryId) {
     const database = await db.openDb();
+    // Setting a category should always mark it as not split
     await database.run('DELETE FROM split_transactions WHERE transaction_id = ?', [transactionId]);
     const result = await database.run('UPDATE transactions SET subcategory_id = ?, is_split = 0 WHERE id = ?', [subcategoryId, transactionId]);
     return result.changes;
   }
-
-  static async updateVendor(transactionId, vendorId) {
+  
+  static async updateType(transactionId, transactionType) {
     const database = await db.openDb();
+    const result = await database.run('UPDATE transactions SET transaction_type = ? WHERE id = ?', [transactionType, transactionId]);
+    return result.changes;
+  }
+
+  static async updateVendor(transactionId, vendorId, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const result = await database.run('UPDATE transactions SET vendor_id = ? WHERE id = ?', [vendorId, transactionId]);
     return result.changes;
   }
@@ -489,13 +481,13 @@ class Transaction {
     const dbToUse = dbInstance || await db.openDb();
     await dbToUse.run(sql, [transactionId]);
   }
-
+  
   static async getSummaryByDateRange(startDate, endDate) {
     const database = await db.openDb();
-    const result = await database.get('SELECT SUM(CASE WHEN is_debit = 1 THEN amount ELSE 0 END) as total_spending, SUM(CASE WHEN is_debit = 0 THEN amount ELSE 0 END) as total_income FROM transactions WHERE transaction_date BETWEEN ? AND ?', [startDate, endDate]);
+    const result = await database.get("SELECT SUM(CASE WHEN is_debit = 1 THEN amount ELSE 0 END) as total_spending, SUM(CASE WHEN is_debit = 0 AND transaction_type = 'income' THEN amount ELSE 0 END) as total_income FROM transactions WHERE transaction_date BETWEEN ? AND ?", [startDate, endDate]);
     return { total_spending: result.total_spending || 0, total_income: result.total_income || 0 };
   }
-
+  
   static async getSpendingByCategory(startDate, endDate) {
     const database = await db.openDb();
     const sql = `
@@ -508,20 +500,74 @@ class Transaction {
           FROM transactions t
           JOIN subcategories s ON t.subcategory_id = s.id
           WHERE t.is_debit = 1 AND t.is_split = 0 AND t.transaction_date BETWEEN ? AND ?
-
           UNION ALL
-
           SELECT s.category_id, st.amount
           FROM split_transactions st
-          JOIN transactions t ON st.transaction_id = t.id
+          JOIN transactions t_split ON st.transaction_id = t_split.id
           JOIN subcategories s ON st.subcategory_id = s.id
-          WHERE t.is_debit = 1 AND t.transaction_date BETWEEN ? AND ?
+          WHERE t_split.is_debit = 1 AND t_split.transaction_date BETWEEN ? AND ?
       ) AS s
       JOIN categories c ON s.category_id = c.id
       GROUP BY c.id, c.name
       ORDER BY actual_spending DESC;
     `;
     return await database.all(sql, [startDate, endDate, startDate, endDate]);
+  }
+  
+  static async getSpendingBySubCategory(startDate, endDate) {
+    const database = await db.openDb();
+     const sql = `
+      SELECT
+          s.id as subcategory_id,
+          s.name as subcategory_name,
+          c.id as category_id,
+          c.name as category_name,
+          COALESCE(SUM(spend.amount), 0) as actual_spending
+      FROM subcategories s
+      JOIN categories c ON s.category_id = c.id
+      LEFT JOIN (
+          SELECT t.subcategory_id, t.amount
+          FROM transactions t
+          WHERE t.is_debit = 1 AND t.transaction_date BETWEEN ? AND ? AND t.is_split = 0
+          UNION ALL
+          SELECT st.subcategory_id, st.amount
+          FROM split_transactions st
+          JOIN transactions t_split ON st.transaction_id = t_split.id
+          WHERE t_split.is_debit = 1 AND t_split.transaction_date BETWEEN ? AND ?
+      ) AS spend ON s.id = spend.subcategory_id
+      GROUP BY s.id, s.name, c.id, c.name
+      ORDER BY c.name, s.name;
+    `;
+    return await database.all(sql, [startDate, endDate, startDate, endDate]);
+  }
+
+  static async getTopVendorsByTransactionCount(startDate, endDate) {
+    const database = await db.openDb();
+    const sql = `
+        SELECT v.display_name, COUNT(t.id) as transaction_count, SUM(t.amount) as total_spend
+        FROM transactions t
+        JOIN vendors v ON t.vendor_id = v.id
+        WHERE t.is_debit = 1 AND t.transaction_date BETWEEN ? AND ?
+        GROUP BY t.vendor_id
+        ORDER BY transaction_count DESC
+        LIMIT 5;
+    `;
+    return await database.all(sql, [startDate, endDate]);
+  }
+
+  static async getRecurringBillsTotalBySubCategory(endDate, startDate) {
+      const database = await db.openDb();
+      const sql = `
+        SELECT s.id as subcategory_id, SUM(rb.amount) as total_recurring
+        FROM recurring_bills rb
+        JOIN subcategories s ON rb.subcategory_id = s.id
+        WHERE 
+          rb.is_active = 1 AND
+          rb.start_date <= ? AND
+          (rb.end_date IS NULL OR rb.end_date >= ?)
+        GROUP BY s.id
+      `;
+      return await database.all(sql, [endDate, startDate]);
   }
 
   static async applyCategorizationRules() {
@@ -545,14 +591,15 @@ class Transaction {
 }
 
 module.exports = Transaction;
-
 --- FILE: ./server/models/Budget.js ---
 const db = require('../config/database');
 
 class Budget {
-  static async bulkSet(budgets) {
-    const database = await db.openDb();
-    await database.exec('BEGIN TRANSACTION');
+  static async bulkSet(budgets, dbInstance) {
+    const database = dbInstance || await db.openDb();
+    const useTransaction = !dbInstance; // Only manage transactions if we opened the DB connection
+
+    if (useTransaction) await database.exec('BEGIN TRANSACTION');
     try {
       const sql = `
         INSERT INTO budgets (subcategory_id, year, month, amount, budget_type) 
@@ -565,60 +612,124 @@ class Budget {
         await stmt.run(budget.subcategory_id, budget.year, budget.month, parseFloat(budget.amount || 0), budget.budget_type || 'allowance');
       }
       await stmt.finalize();
-      await database.exec('COMMIT');
+      if (useTransaction) await database.exec('COMMIT');
     } catch (error) {
-      await database.exec('ROLLBACK');
+      if (useTransaction) await database.exec('ROLLBACK');
       throw error;
     }
   }
 
-  static async getBudgetsBySubCategoryForMonth(year, month) {
-    const database = await db.openDb();
-    const sql = `
-      SELECT
-        sc.id as subcategory_id,
-        sc.name as subcategory_name,
-        c.id as category_id,
-        c.name as category_name,
-        COALESCE(b.amount, 0) as budgeted_amount,
-        COALESCE(b.budget_type, 'allowance') as budget_type
-      FROM subcategories sc
-      JOIN categories c ON sc.category_id = c.id
-      LEFT JOIN (
-        SELECT subcategory_id, amount, budget_type FROM budgets WHERE year = ? AND month = ?
-      ) b ON sc.id = b.subcategory_id
-      ORDER BY c.name, sc.name;
-    `;
-    return await database.all(sql, [year, month]);
+  static async getSingleBudget(subcategoryId, year, month, dbInstance) {
+    const database = dbInstance || await db.openDb();
+    const sql = `SELECT * FROM budgets WHERE subcategory_id = ? AND year = ? AND month = ?`;
+    return await database.get(sql, [subcategoryId, year, month]);
   }
 
-  static async getPreviousMonthSurplus(subcategoryId, year, month) {
-    let prevMonth = month - 1;
-    let prevYear = year;
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear = year - 1;
+  static async getBudgetsByMonth(req, res) {
+    const year = parseInt(req.params.year, 10);
+    const month = parseInt(req.params.month, 10);
+    try {
+      const financialMonthService = await createFinancialMonthService();
+      const { startDate, endDate } = financialMonthService.getFinancialMonthRange(year, month);
+
+      const [budgets, spending, recurringBills] = await Promise.all([
+        Budget.getBudgetsBySubCategoryForMonth(year, month),
+        Transaction.getSpendingBySubCategory(startDate, endDate),
+        Transaction.getRecurringBillsTotalBySubCategory(endDate, startDate)
+      ]);
+
+      const spendingMap = new Map(spending.map(item => [item.subcategory_id, item.actual_spending]));
+      const recurringMap = new Map(recurringBills.map(item => [item.subcategory_id, item.total_recurring]));
+
+      const dataWithCarryover = await Promise.all(budgets.map(async (budget) => {
+        const carryover = budget.budget_type === 'rolling' ? await Budget.getPreviousMonthSurplus(budget.subcategory_id, year, month) : 0;
+        return {
+          ...budget,
+          actual_spending: spendingMap.get(budget.subcategory_id) || 0,
+          recurring_bills_total: recurringMap.get(budget.subcategory_id) || 0,
+          carryover_amount: carryover,
+        };
+      }));
+
+      res.status(200).json(dataWithCarryover);
+    } catch (error) {
+      console.error('Error fetching budgets:', error);
+      res.status(500).json({ message: 'Server error fetching budgets.' });
     }
-    
-    const database = await db.openDb();
-    const historySql = `
-        SELECT final_surplus_or_rollover 
-        FROM monthly_history 
-        WHERE subcategory_id = ? AND year = ? AND month = ? AND budget_type = 'rolling'
-    `;
-    const history = await database.get(historySql, [subcategoryId, prevYear, prevMonth]);
-
-    return history ? history.final_surplus_or_rollover : 0;
   }
 
-   static async isMonthClosed(year, month) {
-    const database = await db.openDb();
-    const res = await database.get('SELECT 1 FROM monthly_history WHERE year = ? AND month = ? AND is_closed = 1 LIMIT 1', [year, month]);
-    return !!res;
-   }
+  static async getBudgetTemplate(req, res) {
+    try {
+        const subcategories = await Subcategory.findAllWithParent();
+        let csvString = "subcategory_id,category_name,subcategory_name";
+        
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
+
+        for (let i=0; i < 12; i++) {
+            const d = new Date(year, month + i, 1);
+            csvString += `,${d.toLocaleString('default', { month: 'short' })}-${d.getFullYear()}`;
+        }
+        csvString += "\n";
+
+        for (const sc of subcategories) {
+            csvString += `${sc.id},"${sc.category_name}","${sc.name}"` + ",0.00".repeat(12) + "\n";
+        }
+
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="budget_template_forward_12m.csv"`);
+        res.status(200).send(csvString);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error generating budget template.' });
+    }
+  }
+
+  static async uploadBudget(req, res) {
+    if (!req.file) { return res.status(400).json({ message: 'No file uploaded.' }); }
+    try {
+        const records = parse(req.file.buffer, {
+            columns: true,
+            skip_empty_lines: true,
+            trim: true,
+        });
+
+        const budgetsToSave = [];
+        const today = new Date();
+
+        for(const rec of records) {
+            for(let i=0; i < 12; i++) {
+                const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                const year = d.getFullYear();
+                const month = d.getMonth() + 1;
+                const monthShort = d.toLocaleString('default', { month: 'short' });
+                const header = `${monthShort}-${year}`;
+                
+                if (rec[header]) {
+                    budgetsToSave.push({
+                        subcategory_id: parseInt(rec.subcategory_id, 10),
+                        year: year,
+                        month: month,
+                        amount: parseFloat(rec[header] || 0),
+                        budget_type: 'allowance' // Default, can be changed in UI
+                    });
+                }
+            }
+        }
+
+        if (budgetsToSave.some(b => isNaN(b.subcategory_id) || isNaN(b.year) || isNaN(b.month) || isNaN(b.amount))) {
+            return res.status(400).json({ message: 'CSV contains invalid or malformed data.' });
+        }
+
+        await Budget.bulkSet(budgetsToSave);
+        res.status(200).json({ message: `Successfully uploaded and saved ${budgetsToSave.length} budget entries.` });
+    } catch (error) {
+        res.status(500).json({ message: `Error processing CSV file: ${error.message}` });
+    }
+  }
 }
 
-module.exports = Budget;
+module.exports = BudgetController;
 --- FILE: ./server/models/PublicHoliday.js ---
 const db = require('../config/database');
 
@@ -721,14 +832,14 @@ class SavingsGoal {
     return await database.run(sql, [id]);
   }
 
-  static async findById(id) {
-    const database = await db.openDb();
+  static async findById(id, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const sql = `SELECT * FROM savings_goals WHERE id = ?`;
     return await database.get(sql, [id]);
   }
 
-  static async updateBalance(id, amount) {
-    const database = await db.openDb();
+  static async updateBalance(id, amount, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const sql = `UPDATE savings_goals SET current_amount = current_amount + ? WHERE id = ?`;
     await database.run(sql, [amount, id]);
   }
@@ -1086,8 +1197,7 @@ module.exports = IgnoredTransaction;
 const SavingsAccount = require('../models/SavingsAccount');
 const SavingsGoal = require('../models/SavingsGoal');
 const Budget = require('../models/Budget');
-const AppSettings = require('../models/AppSettings');
-const Subcategory = require('../models/Subcategory');
+const { createFinancialMonthService } = require('../services/financialMonthService');
 
 class SavingsController {
   static async createSavingsAccount(req, res) {
@@ -1165,56 +1275,45 @@ class SavingsController {
     if (withdrawalAmount <= 0) {
       return res.status(400).json({ message: 'Withdrawal amount must be a positive number.' });
     }
+    
+    const db = require('../config/database');
+    const database = await db.openDb();
 
     try {
-      const goal = await SavingsGoal.findById(id);
-      if (!goal) {
-        return res.status(404).json({ message: 'Savings goal not found.' });
-      }
-
-      const account = await SavingsAccount.findById(goal.account_id);
-      if (!account) {
-          return res.status(404).json({ message: 'Associated savings account not found.' });
-      }
-
-      if (withdrawalAmount > account.current_balance) {
-          return res.status(400).json({ message: `Withdrawal amount cannot exceed the account balance of ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(account.current_balance)}` });
-      }
-
-      const parentCategory = await Subcategory.findParentCategory(subcategory_id);
-      if (!parentCategory) {
-          return res.status(404).json({ message: 'Parent category not found for the selected subcategory.' });
-      }
-
-      const settings = await AppSettings.get();
-      if (!settings) { throw new Error("App settings not found."); }
-
-      const today = new Date();
-      let year = today.getFullYear();
-      let month = today.getMonth() + 1;
-
-      if (today.getDate() >= settings.fiscal_day_start) {
-        month += 1;
-        if (month > 12) { month = 1; year += 1; }
-      }
-
-      const db = require('../config/database');
-      const database = await db.openDb();
       await database.exec('BEGIN TRANSACTION');
 
-      try {
-        await SavingsAccount.updateBalance(goal.account_id, -withdrawalAmount);
-        await Budget.addToBudget(year, month, parentCategory.category_id, withdrawalAmount);
-
-        await database.exec('COMMIT');
-        res.status(200).json({ message: 'Withdrawal successful. Budget has been updated.' });
-      } catch (innerError) {
-        await database.exec('ROLLBACK');
-        throw innerError;
+      const goal = await SavingsGoal.findById(id, database);
+      if (!goal) { throw new Error('Savings goal not found.'); }
+      
+      if (withdrawalAmount > goal.current_amount) {
+          throw new Error(`Withdrawal amount cannot exceed the goal balance of ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(goal.current_amount)}`);
       }
+
+      const financialMonthService = await createFinancialMonthService();
+      const { year, month } = financialMonthService.getCurrentFinancialMonth();
+      
+      const existingBudget = await Budget.getSingleBudget(subcategory_id, year, month, database);
+      
+      const newBudgetAmount = (existingBudget ? existingBudget.amount : 0) + withdrawalAmount;
+      const budgetPayload = {
+          subcategory_id: subcategory_id,
+          year: year,
+          month: month,
+          amount: newBudgetAmount,
+          budget_type: existingBudget ? existingBudget.budget_type : 'allowance'
+      };
+
+      await Budget.bulkSet([budgetPayload], database);
+      await SavingsGoal.updateBalance(id, -withdrawalAmount, database);
+      await SavingsAccount.updateBalance(goal.account_id, -withdrawalAmount, database);
+      
+      await database.exec('COMMIT');
+      res.status(200).json({ message: 'Withdrawal successful. Budget has been updated.' });
+
     } catch (error) {
+      await database.exec('ROLLBACK');
       console.error('Error during withdrawal:', error);
-      res.status(500).json({ message: 'Server error during withdrawal.', error: error.message });
+      res.status(500).json({ message: error.message || 'Server error during withdrawal.' });
     }
   }
 }
@@ -1223,7 +1322,7 @@ module.exports = SavingsController;
 --- FILE: ./server/controllers/budgetController.js ---
 const Budget = require('../models/Budget');
 const Transaction = require('../models/Transaction');
-const Category = require('../models/Category');
+const Subcategory = require('../models/Subcategory');
 const { createFinancialMonthService } = require('../services/financialMonthService');
 const { parse } = require('csv-parse/sync');
 
@@ -1248,39 +1347,53 @@ class BudgetController {
       const financialMonthService = await createFinancialMonthService();
       const { startDate, endDate } = financialMonthService.getFinancialMonthRange(year, month);
 
-      const [budgets, spending] = await Promise.all([
-        Budget.getCategoryBudgetsForMonth(year, month, startDate, endDate),
-        Transaction.getSpendingByCategory(startDate, endDate)
+      const [budgets, spending, recurringBills] = await Promise.all([
+        Budget.getBudgetsBySubCategoryForMonth(year, month),
+        Transaction.getSpendingBySubCategory(startDate, endDate),
+        Transaction.getRecurringBillsTotalBySubCategory(endDate, startDate)
       ]);
 
-      const spendingMap = new Map(spending.map(item => [item.category_id, item.actual_spending]));
+      const spendingMap = new Map(spending.map(item => [item.subcategory_id, item.actual_spending]));
+      const recurringMap = new Map(recurringBills.map(item => [item.subcategory_id, item.total_recurring]));
 
-      const responseData = budgets.map(budget => ({
-        ...budget,
-        actual_spending: spendingMap.get(budget.category_id) || 0
+      const dataWithCarryover = await Promise.all(budgets.map(async (budget) => {
+        const carryover = budget.budget_type === 'rolling' ? await Budget.getPreviousMonthSurplus(budget.subcategory_id, year, month) : 0;
+        return {
+          ...budget,
+          actual_spending: spendingMap.get(budget.subcategory_id) || 0,
+          recurring_bills_total: recurringMap.get(budget.subcategory_id) || 0,
+          carryover_amount: carryover,
+        };
       }));
 
-      res.status(200).json(responseData);
+      res.status(200).json(dataWithCarryover);
     } catch (error) {
-      console.error(error);
+      console.error('Error fetching budgets:', error);
       res.status(500).json({ message: 'Server error fetching budgets.' });
     }
   }
 
   static async getBudgetTemplate(req, res) {
     try {
-        const categories = await Category.findAll();
-        const year = new Date().getFullYear();
-        let csvString = "category_id,category_name,year,month,amount\n";
+        const subcategories = await Subcategory.findAllWithParent();
+        let csvString = "subcategory_id,category_name,subcategory_name";
+        
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
 
-        for (const category of categories) {
-            for (let month = 1; month <= 12; month++) {
-                csvString += `${category.id},"${category.name}",${year},${month},0.00\n`;
-            }
+        for (let i=0; i < 12; i++) {
+            const d = new Date(year, month + i, 1);
+            csvString += `,${d.toLocaleString('default', { month: 'short' })}-${d.getFullYear()}`;
+        }
+        csvString += "\n";
+
+        for (const sc of subcategories) {
+            csvString += `${sc.id},"${sc.category_name}","${sc.name}"` + ",0.00".repeat(12) + "\n";
         }
 
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', `attachment; filename="budget_template_${year}.csv"`);
+        res.setHeader('Content-Disposition', `attachment; filename="budget_template_forward_12m.csv"`);
         res.status(200).send(csvString);
     } catch (error) {
         res.status(500).json({ message: 'Server error generating budget template.' });
@@ -1296,21 +1409,35 @@ class BudgetController {
             trim: true,
         });
 
-        const budgetsToSave = records.map(rec => ({
-            category_id: parseInt(rec.category_id, 10),
-            year: parseInt(rec.year, 10),
-            month: parseInt(rec.month, 10),
-            amount: parseFloat(rec.amount || 0)
-        }));
+        const budgetsToSave = [];
+        const today = new Date();
 
-        if (budgetsToSave.some(b => isNaN(b.category_id) || isNaN(b.year) || isNaN(b.month) || isNaN(b.amount))) {
+        for(const rec of records) {
+            for(let i=0; i < 12; i++) {
+                const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
+                const year = d.getFullYear();
+                const month = d.getMonth() + 1;
+                const monthShort = d.toLocaleString('default', { month: 'short' });
+                const header = `${monthShort}-${year}`;
+                
+                if (rec[header]) {
+                    budgetsToSave.push({
+                        subcategory_id: parseInt(rec.subcategory_id, 10),
+                        year: year,
+                        month: month,
+                        amount: parseFloat(rec[header] || 0),
+                        budget_type: 'allowance' // Default, can be changed in UI
+                    });
+                }
+            }
+        }
+
+        if (budgetsToSave.some(b => isNaN(b.subcategory_id) || isNaN(b.year) || isNaN(b.month) || isNaN(b.amount))) {
             return res.status(400).json({ message: 'CSV contains invalid or malformed data.' });
         }
 
         await Budget.bulkSet(budgetsToSave);
-
         res.status(200).json({ message: `Successfully uploaded and saved ${budgetsToSave.length} budget entries.` });
-
     } catch (error) {
         res.status(500).json({ message: `Error processing CSV file: ${error.message}` });
     }
@@ -1318,7 +1445,6 @@ class BudgetController {
 }
 
 module.exports = BudgetController;
-
 --- FILE: ./server/controllers/forecastController.js ---
 const ForecastService = require('../services/forecastService');
 
@@ -1400,78 +1526,194 @@ class VendorController {
 
 module.exports = VendorController;
 
+--- FILE: ./server/controllers/backupController.js ---
+const path = require('path');
+const fs = require('fs');
+const db = require('../config/database');
+
+const DB_PATH = path.join(__dirname, '..', 'data', 'sqlite', 'budget.db');
+
+class BackupController {
+  static createBackup(req, res) {
+    if (fs.existsSync(DB_PATH)) {
+      res.setHeader('Content-Disposition', 'attachment; filename=budget_backup.db');
+      res.setHeader('Content-Type', 'application/x-sqlite3');
+      res.download(DB_PATH, 'budget_backup.db', (err) => {
+        if (err) {
+          console.error('Error downloading database:', err);
+          if (!res.headersSent) {
+            res.status(500).json({ message: "Could not download the database." });
+          }
+        }
+      });
+    } else {
+      res.status(404).json({ message: "Database file not found." });
+    }
+  }
+
+  static async restoreBackup(req, res) {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No backup file uploaded.' });
+    }
+
+    const tempPath = req.file.path;
+    const dbDir = path.dirname(DB_PATH);
+
+    try {
+      // Close the existing database connection to release the file lock.
+      await db.closeDb();
+      console.log('Database connection closed for restore.');
+
+      // Ensure the target directory exists.
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+
+      // Copy the file, then delete the temporary one. This avoids the EXDEV error.
+      fs.copyFileSync(tempPath, DB_PATH);
+      fs.unlinkSync(tempPath); 
+      console.log('Database file replaced successfully.');
+
+      res.status(200).json({ message: 'Restore successful. The application is restarting...' });
+      
+      // Exit the process after a short delay. Docker will restart it automatically.
+      setTimeout(() => {
+        console.log('Exiting process for restart...');
+        process.exit(1);
+      }, 500);
+
+    } catch (error) {
+        console.error('Error during database restore:', error);
+        // Clean up the temporary file if it still exists
+        if (fs.existsSync(tempPath)) {
+          fs.unlinkSync(tempPath);
+        }
+        res.status(500).json({ message: `Failed to restore backup: ${error.message}` });
+    }
+  }
+}
+
+module.exports = BackupController;
 --- FILE: ./server/controllers/dashboardController.js ---
 const Transaction = require('../models/Transaction');
 const Budget = require('../models/Budget');
+const PlannedIncome = require('../models/PlannedIncome');
+const SavingsAccount = require('../models/SavingsAccount');
 const { createFinancialMonthService } = require('../services/financialMonthService');
-const AppSettings = require('../models/AppSettings');
+const ForecastService = require('../services/forecastService');
 
 class DashboardController {
-  static async getMonthlySummary(req, res) {
+  static async getDashboardData(req, res) {
     try {
-      const settings = await AppSettings.get();
-      if (!settings) {
-        throw new Error("App settings not found. Please complete initial setup.");
-      }
-
-      const today = new Date();
-      let year = today.getFullYear();
-      let month = today.getMonth() + 1; // getMonth() is 0-indexed, so add 1
-
-      // Logic to determine the correct financial month
-      // If today's date is on or after the fiscal start day, we are in the *next* financial month.
-      if (today.getDate() >= settings.fiscal_day_start) {
-        month += 1;
-        if (month > 12) {
-          month = 1;
-          year += 1;
-        }
-      }
-
       const financialMonthService = await createFinancialMonthService();
-      const { startDate, endDate } = financialMonthService.getFinancialMonthRange(year, month);
+      // If setup is not complete, return empty data to prevent a crash.
+      if (!financialMonthService) {
+        return res.status(200).json({
+          summary: { totalIncome: 0, totalSpending: 0, plannedSurplus: 0, currentSurplus: 0 },
+          incomeStatus: [],
+          inMonthCashflow: [],
+          twelveMonthForecast: [],
+          savingsGoals: [],
+          budgetVsActual: [],
+          topVendors: [],
+        });
+      }
 
+      const { year, month, startDate, endDate } = financialMonthService.getCurrentFinancialMonth(); 
+      
       const [
-        monthlySummary,
-        spendingByCategory,
-        categoryBudgets
+        allTransactions,
+        allBudgets,
+        allPlannedIncomes,
+        allSavingsAccounts,
+        twelveMonthForecast,
+        topVendors,
+        spendingByCategory
       ] = await Promise.all([
-        Transaction.getSummaryByDateRange(startDate, endDate),
-        Transaction.getSpendingByCategory(startDate, endDate),
-        Budget.getCategoryBudgetsForMonth(year, month, startDate, endDate)
+        Transaction.findAllByDateRange(startDate, endDate),
+        Budget.getBudgetsBySubCategoryForMonth(year, month),
+        PlannedIncome.findAllActive(),
+        SavingsAccount.findAll(),
+        ForecastService.generateForecast(),
+        Transaction.getTopVendorsByTransactionCount(startDate, endDate),
+        Transaction.getSpendingByCategory(startDate, endDate)
       ]);
 
-      const categoryMap = new Map();
+      const totalIncome = allTransactions.filter(t => !t.is_debit && t.transaction_type === 'income').reduce((sum, t) => sum + t.amount, 0);
+      const totalSpending = allTransactions.filter(t => t.is_debit).reduce((sum, t) => sum + t.amount, 0);
+      
+      const plannedIncomeTotal = allPlannedIncomes.reduce((sum, i) => sum + i.amount, 0);
+      const totalBudgeted = allBudgets.reduce((sum, b) => sum + b.budgeted_amount, 0);
+      const plannedSurplus = plannedIncomeTotal - totalBudgeted;
 
-      categoryBudgets.forEach(b => {
-        categoryMap.set(b.category_id, {
-          category_name: b.category_name,
-          budgeted: b.budgeted_amount,
-          actual: 0
-        });
+      const receivedIncomes = allPlannedIncomes.map(pi => {
+        const received = allTransactions.some(t => !t.is_debit && t.description_original.toLowerCase().includes(pi.source_name.toLowerCase()));
+        return { ...pi, received };
+      });
+
+      const spendingMap = new Map();
+      allTransactions.filter(t => t.is_debit).forEach(t => {
+          if (t.subcategory_id) {
+              spendingMap.set(t.subcategory_id, (spendingMap.get(t.subcategory_id) || 0) + t.amount);
+          }
+      });
+      
+      const budgetOverspends = allBudgets.reduce((acc, budget) => {
+        const spendingForSubcategory = spendingMap.get(budget.subcategory_id) || 0;
+        if (spendingForSubcategory > budget.budgeted_amount) {
+            acc += (spendingForSubcategory - budget.budgeted_amount);
+        }
+        return acc;
+      }, 0);
+
+      const currentSurplus = totalIncome - totalSpending;
+      
+      const inMonthCashflow = [];
+      let runningBalance = 0;
+      const daysInMonth = (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24);
+      let currentDate = new Date(startDate);
+
+      for (let i = 0; i <= daysInMonth; i++) {
+          const isoDate = currentDate.toISOString().split('T')[0];
+          
+          const dailyInflow = allTransactions.filter(t => !t.is_debit && t.transaction_date === isoDate).reduce((sum, t) => sum + t.amount, 0);
+          const dailyOutflow = allTransactions.filter(t => t.is_debit && t.transaction_date === isoDate).reduce((sum, t) => sum + t.amount, 0);
+
+          runningBalance += dailyInflow - dailyOutflow;
+          inMonthCashflow.push({ date: isoDate, actual: runningBalance });
+          currentDate.setDate(currentDate.getDate() + 1);
+      }
+
+      const categoryMap = new Map();
+      allBudgets.forEach(b => {
+          if (!categoryMap.has(b.category_id)) {
+              categoryMap.set(b.category_id, { category_name: b.category_name, budgeted: 0, actual: 0 });
+          }
+          let categoryData = categoryMap.get(b.category_id);
+          categoryData.budgeted += b.budgeted_amount;
       });
 
       spendingByCategory.forEach(s => {
-        if (categoryMap.has(s.category_id)) {
-          categoryMap.get(s.category_id).actual = s.actual_spending;
-        } else {
-          categoryMap.set(s.category_id, {
-            category_name: s.category_name,
-            budgeted: 0,
-            actual: s.actual_spending
-          });
-        }
+          if (categoryMap.has(s.category_id)) {
+              categoryMap.get(s.category_id).actual += s.actual_spending;
+          } else {
+              categoryMap.set(s.category_id, { category_name: s.category_name, budgeted: 0, actual: s.actual_spending });
+          }
       });
 
-      const budgetVsActual = Array.from(categoryMap.values());
-      const surplus_deficit = monthlySummary.total_income - monthlySummary.total_spending;
-
       const dashboardData = {
-        month_to_date_summary: {
-          ...monthlySummary,
-          surplus_deficit: Math.round(surplus_deficit * 100) / 100
+        summary: {
+            totalIncome,
+            totalSpending,
+            plannedSurplus,
+            currentSurplus
         },
-        budget_vs_actual: budgetVsActual
+        incomeStatus: receivedIncomes,
+        inMonthCashflow,
+        twelveMonthForecast,
+        savingsGoals: allSavingsAccounts.flatMap(acc => acc.goals),
+        budgetVsActual: Array.from(categoryMap.values()),
+        topVendors: topVendors,
       };
 
       res.status(200).json(dashboardData);
@@ -1484,7 +1726,6 @@ class DashboardController {
 }
 
 module.exports = DashboardController;
-
 --- FILE: ./server/controllers/categoryController.js ---
 const Category = require('../models/Category');
 const Subcategory = require('../models/Subcategory');
@@ -1805,10 +2046,11 @@ class RecurringBillController {
     const { id } = req.params;
     const newBillDetails = req.body;
     try {
-      const oldBillEndDate = new Date().toISOString().split('T')[0];
-
-      await RecurringBill.updateAndSupersede(id, newBillDetails, oldBillEndDate);
-      res.status(200).json({ message: 'Recurring bill updated successfully.' });
+      // The original code was calling a non-existent function "updateAndSupersede".
+      // This has been corrected to call the standard "update" function.
+      await RecurringBill.update(id, newBillDetails);
+      const updatedBill = { id, ...newBillDetails };
+      res.status(200).json(updatedBill);
     } catch (error) {
       console.error('Error updating recurring bill:', error);
       res.status(500).json({ message: 'Server error updating recurring bill.' });
@@ -1831,7 +2073,6 @@ class RecurringBillController {
 }
 
 module.exports = RecurringBillController;
-
 --- FILE: ./server/controllers/transactionController.js ---
 const CsvParserService = require('../services/csvParserService');
 const VendorNormalizationService = require('../services/vendorNormalizationService');
@@ -1841,32 +2082,18 @@ const CategorizationRule = require('../models/CategorizationRule');
 const SplitTransaction = require('../models/SplitTransaction');
 const db = require('../config/database');
 
-function formatDate(dateString) {
-  if (!dateString || typeof dateString !== 'string') return null;
-  const trimmedDate = dateString.trim();
-  const parts = trimmedDate.split('/');
-  if (parts.length === 3) {
-    const [part1, part2, year] = parts;
-    if (!isNaN(part1) && !isNaN(part2) && !isNaN(year) && year.length === 4) {
-      const isoDate = new Date(`${year}-${String(part2).padStart(2, '0')}-${String(part1).padStart(2, '0')}T12:00:00Z`);
-      if (!isNaN(isoDate.getTime())) {
-          return isoDate.toISOString().split('T')[0];
-      }
-    }
-  }
-  const date = new Date(trimmedDate);
-  if (!isNaN(date.getTime()) && date.getFullYear() > 1900) {
-    return date.toISOString().split('T')[0];
-  }
-  return null;
-}
 
 class TransactionController {
   static async uploadTransactions(req, res) {
     if (!req.file) { return res.status(400).json({ message: 'No file uploaded.' }); }
+    
     try {
-      const filePath = req.file.path;
-      const parsedTransactions = await CsvParserService.parse(filePath);
+      const { profileId } = req.body;
+      if(!profileId) { return res.status(400).json({ message: 'No import profile selected.' }); }
+
+      // Use req.file.buffer which is available when using multer's memoryStorage
+      const parsedTransactions = await CsvParserService.parse(req.file.buffer, profileId);
+      
       const formattedTransactions = [];
       for(const tx of parsedTransactions) {
         const vendorId = await VendorNormalizationService.normalize(tx.description);
@@ -1875,8 +2102,9 @@ class TransactionController {
             const rule = await CategorizationRule.findRuleByVendor(vendorId);
             if (rule) { subcategoryId = rule.subcategory_id; }
         }
+
         formattedTransactions.push({
-          transaction_date: formatDate(tx.date),
+          transaction_date: tx.date,
           description_original: tx.description,
           amount: Math.abs(tx.amount),
           is_debit: tx.amount < 0,
@@ -1885,24 +2113,26 @@ class TransactionController {
           subcategory_id: subcategoryId,
         });
       }
+
       const validTransactions = formattedTransactions.filter(tx => tx.transaction_date && tx.amount > 0);
-      const newTransactions = [];
+      let newCount = 0;
+      let ignoredCount = 0;
 
       for (const tx of validTransactions) {
         const isDuplicate = await Transaction.exists(tx);
         if (!isDuplicate) { 
-          newTransactions.push(tx); 
+          await Transaction.create(tx);
+          newCount++;
         } else {
           await IgnoredTransaction.create(tx, 'Potential Duplicate');
+          ignoredCount++;
         }
       }
-      if (newTransactions.length > 0) { await Transaction.bulkCreate(newTransactions); }
 
-      const ignoredCount = validTransactions.length - newTransactions.length;
-      res.status(201).json({ message: `Successfully saved ${newTransactions.length} new transactions. Ignored ${ignoredCount} duplicates.` });
+      res.status(201).json({ message: `Successfully saved ${newCount} new transactions. Ignored ${ignoredCount} duplicates.` });
     } catch (error) {
       console.error(error)
-      res.status(500).json({ message: 'Error processing file.' });
+      res.status(500).json({ message: error.message || 'Error processing file.' });
     }
   }
 
@@ -1915,7 +2145,7 @@ class TransactionController {
         res.status(500).json({ message: 'Server error applying categorization rules.' });
     }
   }
-
+  
   static async getIgnoredTransactions(req, res) {
     try {
       const transactions = await IgnoredTransaction.findAll();
@@ -1933,9 +2163,8 @@ class TransactionController {
       }
 
       const { id, reason, created_at, ...txToCreate } = ignoredTx;
-      await Transaction.bulkCreate([txToCreate]);
+      await Transaction.create(txToCreate);
       await IgnoredTransaction.delete(req.params.id);
-
       res.status(200).json({ message: 'Transaction reinstated.' });
     } catch (error) {
       res.status(500).json({ message: 'Error reinstating transaction.' });
@@ -1967,15 +2196,26 @@ class TransactionController {
 
   static async categorizeTransaction(req, res) {
     const { id } = req.params;
-    const { subcategory_id } = req.body;
-    if (!subcategory_id) { return res.status(400).json({ message: 'Subcategory ID is required.' }); }
+    const { subcategory_id, transaction_type } = req.body;
+
     try {
-      const changes = await Transaction.updateCategory(id, subcategory_id);
-      if (changes === 0) { return res.status(404).json({ message: 'Transaction not found.' }); }
-      const transaction = await Transaction.findById(id);
-      if (transaction && transaction.vendor_id) { await CategorizationRule.createOrUpdateRule(transaction.vendor_id, subcategory_id); }
-      res.status(200).json({ message: 'Transaction categorized successfully.' });
-    } catch (error) { res.status(500).json({ message: 'Server error categorizing transaction.' }); }
+      if (subcategory_id !== undefined) { 
+        await Transaction.updateCategory(id, subcategory_id);
+        const transaction = await Transaction.findById(id);
+        if (transaction && transaction.vendor_id && subcategory_id) {
+          await CategorizationRule.createOrUpdateRule(transaction.vendor_id, subcategory_id);
+        }
+      }
+      
+      if (transaction_type) {
+        await Transaction.updateType(id, transaction_type);
+      }
+
+      res.status(200).json({ message: 'Transaction updated successfully.' });
+    } catch (error) { 
+      console.error("Error categorizing transaction:", error);
+      res.status(500).json({ message: 'Server error categorizing transaction.' }); 
+    }
   }
 
   static async updateTransactionVendor(req, res) {
@@ -1991,18 +2231,29 @@ class TransactionController {
 
   static async splitTransaction(req, res) {
     const { id } = req.params;
-    const { splits } = req.body;
-    if (!splits || !Array.isArray(splits) || splits.length < 2) { return res.status(400).json({ message: 'A split must contain at least two items.' }); }
+    const { splits, vendor_id } = req.body;
+
+    if (!splits || !Array.isArray(splits) || splits.length < 2) { 
+      return res.status(400).json({ message: 'A split must contain at least two items.' }); 
+    }
+
     const database = await db.openDb();
     try {
       await database.exec('BEGIN TRANSACTION');
       const parentTx = await Transaction.findById(id, database);
       if (!parentTx) { throw new Error('Parent transaction not found.'); }
+      
       const totalSplitAmount = splits.reduce((sum, s) => sum + parseFloat(s.amount || 0), 0);
       if (Math.abs(totalSplitAmount - parentTx.amount) > 0.01) { throw new Error(`Split amounts (£${totalSplitAmount.toFixed(2)}) do not match the parent transaction amount (£${parentTx.amount.toFixed(2)}).`); }
+      
+      if (vendor_id && vendor_id !== parentTx.vendor_id.toString()) {
+        await Transaction.updateVendor(id, vendor_id, database);
+      }
+
       await SplitTransaction.deleteByTransactionId(id, database);
       await Transaction.markAsSplit(id, database);
       await SplitTransaction.bulkCreate(id, splits, database);
+
       await database.exec('COMMIT');
       res.status(200).json({ message: 'Transaction split successfully.' });
     } catch (error) {
@@ -2013,7 +2264,6 @@ class TransactionController {
 }
 
 module.exports = TransactionController;
-
 --- FILE: ./server/routes/subcategories.js ---
 const express = require('express');
 const router = express.Router();
@@ -2049,10 +2299,13 @@ const multer = require('multer');
 const TransactionController = require('../controllers/transactionController');
 const isAuthenticated = require('../middleware/isAuthenticated');
 
-const upload = multer({ dest: 'data/uploads/' });
+// Use memory storage for multer to handle the file buffer directly
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 router.use(isAuthenticated);
 
+// The upload middleware now uses memory storage
 router.post('/upload', upload.single('transactionsFile'), TransactionController.uploadTransactions);
 router.post('/apply-rules', TransactionController.applyRules);
 
@@ -2067,7 +2320,23 @@ router.post('/ignored/:id/reinstate', TransactionController.reinstateTransaction
 router.delete('/ignored/purge', TransactionController.purgeIgnoredTransactions);
 
 module.exports = router;
+--- FILE: ./server/routes/backup.js ---
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const BackupController = require('../controllers/backupController');
+const isAuthenticated = require('../middleware/isAuthenticated');
 
+// Configure multer for temporary file storage
+const upload = multer({ dest: 'data/uploads/' });
+
+// Backup must be authenticated
+router.get('/create', isAuthenticated, BackupController.createBackup);
+
+// Restore is public to be accessible from the setup page
+router.post('/restore', upload.single('backupFile'), BackupController.restoreBackup);
+
+module.exports = router;
 --- FILE: ./server/routes/vendors.js ---
 const express = require('express');
 const router = express.Router();
@@ -2156,10 +2425,10 @@ const isAuthenticated = require('../middleware/isAuthenticated');
 
 router.use(isAuthenticated);
 
-router.get('/monthly-summary', DashboardController.getMonthlySummary);
+// This is the new, single endpoint for the rebuilt dashboard
+router.get('/', DashboardController.getDashboardData);
 
 module.exports = router;
-
 --- FILE: ./server/routes/budgets.js ---
 const express = require('express');
 const router = express.Router();
@@ -2280,19 +2549,42 @@ class FinancialMonthService {
   }
 
   getFinancialMonthRange(year, month) {
-    // Note: JS months are 0-indexed, so month - 1 for current month, month - 2 for previous.
-    const targetStartDate = new Date(year, month - 2, this.fiscalDayStart);
+    const targetStartDate = new Date(year, month - 1, this.fiscalDayStart);
+    targetStartDate.setMonth(targetStartDate.getMonth() - 1);
     const fiscalMonthStartDate = getPreviousWorkday(targetStartDate, this.holidays);
 
     const targetEndDate = new Date(year, month - 1, this.fiscalDayStart);
     const nextFiscalMonthStartDate = getPreviousWorkday(targetEndDate, this.holidays);
-
+    
     const fiscalMonthEndDate = new Date(nextFiscalMonthStartDate);
     fiscalMonthEndDate.setDate(fiscalMonthEndDate.getDate() - 1);
 
     return {
       startDate: fiscalMonthStartDate.toISOString().split('T')[0],
       endDate: fiscalMonthEndDate.toISOString().split('T')[0],
+    };
+  }
+
+  getCurrentFinancialMonth() {
+    const today = new Date();
+    let year = today.getFullYear();
+    let month = today.getMonth() + 1; // getMonth() is 0-indexed
+
+    if (today.getDate() >= this.fiscalDayStart) {
+      month += 1;
+      if (month > 12) {
+        month = 1;
+        year += 1;
+      }
+    }
+    
+    const range = this.getFinancialMonthRange(year, month);
+
+    return {
+      year,
+      month,
+      startDate: range.startDate,
+      endDate: range.endDate,
     };
   }
 }
@@ -2302,7 +2594,10 @@ async function createFinancialMonthService() {
     AppSettings.get(),
     getHolidays()
   ]);
-  if (!settings) { throw new Error("Application settings have not been configured."); }
+  // Return null if settings are not yet configured, instead of throwing an error.
+  if (!settings || !settings.fiscal_day_start) { 
+    return null;
+  }
   return new FinancialMonthService(settings, holidays);
 }
 
@@ -2416,92 +2711,99 @@ class HolidayService {
 module.exports = HolidayService;
 
 --- FILE: ./server/services/csvParserService.js ---
-const fs = require('fs');
-const csv = require('csv-parser');
-const { Readable } = require('stream');
+const { parse } = require('csv-parse/sync');
+const ImportProfile = require('../models/ImportProfile');
 
 function cleanAndParseFloat(value) {
-  if (typeof value !== 'string') return 0;
-  const cleanedValue = value.replace(/[^0-9.-]+/g, "");
-  return parseFloat(cleanedValue || 0);
+    if (typeof value !== 'string') return 0;
+    // This regex is more robust, handling commas in thousands and currency symbols.
+    const cleanedValue = value.replace(/[^0-9.-]+/g, "");
+    return parseFloat(cleanedValue || 0);
 }
 
+function normalizeDate(dateString, format) {
+    if (!dateString) return null;
+    
+    // Attempt standard parsing first
+    let date = new Date(dateString);
+    if (!isNaN(date.getTime())) {
+        return date.toISOString().split('T')[0];
+    }
+
+    // Use format if provided (e.g., DD/MM/YYYY)
+    if (format) {
+        const separator = format.match(/[^A-Z]/)[0];
+        const formatParts = format.toUpperCase().split(separator);
+        const dateParts = dateString.split(separator);
+        
+        if (formatParts.length === dateParts.length) {
+            const dateObj = {};
+            formatParts.forEach((part, i) => {
+                dateObj[part] = parseInt(dateParts[i], 10);
+            });
+
+            const year = dateObj.YYYY || dateObj.YY;
+            const month = dateObj.MM - 1; // Month is 0-indexed
+            const day = dateObj.DD;
+
+            if (!isNaN(year) && !isNaN(month) && !isNaN(day)) {
+                date = new Date(Date.UTC(year, month, day));
+                 if (!isNaN(date.getTime())) {
+                    return date.toISOString().split('T')[0];
+                }
+            }
+        }
+    }
+    
+    return null; // Return null if all parsing fails
+}
+
+
 class CsvParserService {
-  static parse(filePath) {
-    return new Promise((resolve, reject) => {
-      const results = [];
-      const fileContent = fs.readFileSync(filePath, 'utf8');
-      const lines = fileContent.split('\n');
-      let format = null;
-      let headerRowIndex = -1;
+  static async parse(fileBuffer, profileId) {
+    const profile = await ImportProfile.findById(profileId);
+    if (!profile) {
+      throw new Error('Import profile not found.');
+    }
 
-      for (let i = 0; i < 15 && i < lines.length; i++) {
-        const line = lines[i].toLowerCase();
-        if (line.includes('date') && line.includes('transaction type') && line.includes('paid out')) {
-          format = 'nationwide';
-          headerRowIndex = i;
-          break;
-        }
-        if (i === 0 && line.includes('date') && line.includes('description') && line.includes('amount')) {
-          format = 'amex';
-          headerRowIndex = i;
-          break;
-        }
-      }
-
-      if (headerRowIndex === -1) {
-        fs.unlinkSync(filePath);
-        return reject(new Error('Could not identify a valid header row in the CSV file.'));
-      }
-
-      const cleanCsvContent = lines.slice(headerRowIndex).join('\n');
-      const readableStream = Readable.from(cleanCsvContent);
-
-      readableStream
-        .pipe(csv())
-        .on('data', (row) => {
-          const cleanRow = {};
-          for (const key in row) {
-              cleanRow[key.trim().toLowerCase()] = row[key];
-          }
-
-          if (format === 'nationwide') {
-              const paidOut = cleanAndParseFloat(cleanRow['paid out']);
-              const paidIn = cleanAndParseFloat(cleanRow['paid in']);
-              if ((paidOut > 0 || paidIn > 0) && cleanRow['date']) {
-                  results.push({
-                      date: cleanRow['date'],
-                      description: cleanRow['description'],
-                      amount: paidOut > 0 ? -paidOut : paidIn,
-                      source: 'nationwide'
-                  });
-              }
-          } else if (format === 'amex') {
-              const amount = cleanAndParseFloat(cleanRow['amount']);
-              if (!isNaN(amount) && cleanRow['date']) {
-                  results.push({
-                      date: cleanRow['date'],
-                      description: cleanRow['description'],
-                      amount: -amount,
-                      source: 'amex'
-                  });
-              }
-          }
-        })
-        .on('end', () => {
-          fs.unlinkSync(filePath);
-          resolve(results);
-        })
-        .on('error', (error) => {
-          fs.unlinkSync(filePath);
-          reject(error);
-        });
+    const records = parse(fileBuffer, {
+      columns: header => header.map(h => h.trim()),
+      skip_empty_lines: true,
+      trim: true,
     });
+
+    const results = [];
+
+    for (const row of records) {
+      const date = normalizeDate(row[profile.date_col], profile.date_format);
+      if (!date) continue; // Skip rows with invalid dates
+
+      const description = row[profile.description_col] || 'N/A';
+      let amount = 0;
+
+      if (profile.amount_col && row[profile.amount_col]) {
+        amount = cleanAndParseFloat(row[profile.amount_col]);
+      } else if (profile.debit_col && profile.credit_col) {
+        const debit = cleanAndParseFloat(row[profile.debit_col]);
+        const credit = cleanAndParseFloat(row[profile.credit_col]);
+        amount = credit - debit;
+      }
+      
+      if (amount === 0) continue; // Skip zero-amount transactions
+
+      results.push({
+        date: date,
+        description: description,
+        amount: amount, // Positive for income, negative for expenses
+        source: profile.profile_name,
+      });
+    }
+
+    return results;
   }
 }
 
 module.exports = CsvParserService;
-
 --- FILE: ./clean_build.sh ---
 #!/bin/bash
 
@@ -2530,7 +2832,7 @@ echo "Application is starting. You will need to perform the initial setup again.
 
 --- FILE: ./deployment/Dockerfile.server ---
 # =================================================================
-#  Dockerfile for the Node.js Backend Server (Cache Busted)
+#  Dockerfile for the Node.js Backend Server
 # =================================================================
 
 # Use an official Node.js runtime as a parent image.
@@ -2542,21 +2844,25 @@ WORKDIR /usr/src/app
 # Copy package.json and package-lock.json
 COPY server/package*.json ./
 
-# Add a build argument to bust the cache if needed
-ARG CACHE_BUSTER=1
-
 # Install application dependencies
+# This is run as root to ensure global packages can be installed if needed
 RUN npm install
 
 # Copy the rest of the application source code
 COPY ./server .
+
+# Create the data directory and change ownership to the 'node' user.
+# This is the critical fix that allows the app to write/restore the database.
+RUN mkdir -p data/sqlite && chown -R node:node /usr/src/app
+
+# Switch to the non-root 'node' user for better security
+USER node
 
 # Make port 8080 available
 EXPOSE 8080
 
 # Define the command to run the app
 CMD [ "node", "server.js" ]
-
 --- FILE: ./deployment/Dockerfile.client ---
 # =================================================================
 #  Dockerfile for the React Client (with Nginx Proxy)
@@ -2848,7 +3154,7 @@ module.exports = {
 }
 
 --- FILE: ./client/src/contexts/AuthContext.js ---
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../services/api';
 
@@ -2858,18 +3164,19 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem('authToken'));
   const [appSettings, setAppSettings] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [initError, setInitError] = useState(null);
   const navigate = useNavigate();
 
-  const initialize = useCallback(async () => {
+  const initializeApp = useCallback(async () => {
     setIsLoading(true);
+    setInitError(null);
     try {
-      // This API call now correctly checks if the app is set up first.
       const settings = await api.getAppSettings();
       setAppSettings(settings);
     } catch (error) {
       console.error("Initialization Error:", error);
-      // If this fails, it's a server error, not a login issue.
-      // We clear the token to be safe.
+      setInitError(error.message || 'Failed to connect to the server. Please ensure it is running and try again.');
+      setAppSettings(null);
       setToken(null);
       localStorage.removeItem('authToken');
     } finally {
@@ -2878,14 +3185,15 @@ export function AuthProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    initialize();
-  }, [token, initialize]);
+    initializeApp();
+  }, [initializeApp]);
 
   const login = async (email, password) => {
     const data = await api.login(email, password);
     if (data && data.token) {
       localStorage.setItem('authToken', data.token);
-      setToken(data.token); // This will trigger the useEffect to re-run and get settings.
+      setToken(data.token);
+      await initializeApp(); // Re-fetch settings after a successful login
     } else {
       throw new Error('Login failed. Please check your credentials.');
     }
@@ -2894,6 +3202,7 @@ export function AuthProvider({ children }) {
   const logout = () => {
     setToken(null);
     localStorage.removeItem('authToken');
+    setAppSettings(null);
     navigate('/login');
   };
 
@@ -2904,7 +3213,8 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!token,
     appSettings,
     isLoading,
-    reloadSettings: initialize // Function to re-run initialization after setup.
+    initError,
+    initializeApp
   };
 
   return (
@@ -2979,7 +3289,7 @@ root.render(
 import React, { useState, useEffect } from 'react';
 import * as api from '../services/api';
 import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from './ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -2988,13 +3298,14 @@ function CategorizationModal({ transaction, allSubcategories, allVendors, onClos
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
   const [selectedVendor, setSelectedVendor] = useState('');
   const [newVendorName, setNewVendorName] = useState('');
-
+  const [transactionType, setTransactionType] = useState('expense');
   const isOpen = !!transaction;
 
   useEffect(() => {
     if (transaction) {
       setSelectedSubcategory(transaction.subcategory_id?.toString() || '');
       setSelectedVendor(transaction.vendor_id?.toString() || '');
+      setTransactionType(transaction.transaction_type || (transaction.is_debit ? 'expense' : 'income'));
       setNewVendorName('');
     }
   }, [transaction]);
@@ -3010,83 +3321,63 @@ function CategorizationModal({ transaction, allSubcategories, allVendors, onClos
       if (vendorIdToSave && vendorIdToSave !== transaction.vendor_id?.toString()) {
         await api.updateTransactionVendor(transaction.id, vendorIdToSave);
       }
-      if (selectedSubcategory && selectedSubcategory !== transaction.subcategory_id?.toString()) {
-        await api.categorizeTransaction(transaction.id, selectedSubcategory);
-      }
+      
+      const payload = {
+          subcategory_id: selectedSubcategory || null,
+          transaction_type: transactionType
+      };
+      await api.categorizeTransaction(transaction.id, payload);
+
       await onSave();
+      onClose();
     } catch (error) {
       console.error("Failed to save categorization", error);
       alert("Error: " + error.message);
     }
   };
 
-  const formatCurrency = (value) =>
-    new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
+  const formatCurrency = (value) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-[525px]">
-        <DialogHeader>
-          <DialogTitle>Categorize Transaction</DialogTitle>
-          <DialogDescription>
-            Assign a category and vendor to this transaction.
-          </DialogDescription>
-        </DialogHeader>
-
+        <DialogHeader><DialogTitle>Categorize Transaction</DialogTitle></DialogHeader>
         {transaction && (
           <div className="py-4 space-y-4">
             <div className="bg-muted p-3 rounded-md text-sm">
-              <div className="flex justify-between"><span>Date:</span> <strong>{transaction.transaction_date}</strong></div>
+              <div className="flex justify-between"><span>Date:</span> <strong>{new Date(transaction.transaction_date).toLocaleDateString("en-GB")}</strong></div>
               <div className="flex justify-between"><span>Description:</span> <strong>{transaction.description_original}</strong></div>
               <div className="flex justify-between"><span>Amount:</span> <strong className={transaction.is_debit ? 'text-destructive' : 'text-green-600'}>{formatCurrency(transaction.amount)}</strong></div>
             </div>
-
+            {!transaction.is_debit && (
+              <div className="grid gap-2">
+                <Label>Transaction Type</Label>
+                <Select value={transactionType} onValueChange={setTransactionType}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="income">Income</SelectItem>
+                        <SelectItem value="refund">Refund</SelectItem>
+                    </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid gap-2">
-              <Label htmlFor="vendor">Vendor</Label>
-              <Select onValueChange={setSelectedVendor} value={selectedVendor}>
-                <SelectTrigger id="vendor">
-                  <SelectValue placeholder="-- Select Vendor --" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allVendors.map(v => <SelectItem key={v.id} value={v.id.toString()}>{v.display_name}</SelectItem>)}
-                  <SelectItem value="new">-- Create New Vendor --</SelectItem>
-                </SelectContent>
-              </Select>
-              {selectedVendor === 'new' && (
-                <Input
-                  placeholder="New Vendor Name"
-                  value={newVendorName}
-                  onChange={(e) => setNewVendorName(e.target.value)}
-                  className="mt-2"
-                />
-              )}
+              <Label>Vendor</Label>
+              <Select onValueChange={setSelectedVendor} value={selectedVendor}><SelectTrigger><SelectValue placeholder="-- Select Vendor --" /></SelectTrigger><SelectContent>{allVendors.map(v => <SelectItem key={v.id} value={v.id.toString()}>{v.display_name}</SelectItem>)}<SelectItem value="new">-- Create New Vendor --</SelectItem></SelectContent></Select>
+              {selectedVendor === 'new' && ( <Input placeholder="New Vendor Name" value={newVendorName} onChange={(e) => setNewVendorName(e.target.value)} className="mt-2" /> )}
             </div>
-
             <div className="grid gap-2">
-              <Label htmlFor="category">Category</Label>
-               <Select onValueChange={setSelectedSubcategory} value={selectedSubcategory}>
-                <SelectTrigger id="category">
-                  <SelectValue placeholder="-- Select Category --" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allSubcategories.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} > {s.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <Label>Category</Label>
+               <Select onValueChange={setSelectedSubcategory} value={selectedSubcategory}><SelectTrigger><SelectValue placeholder="-- Select Category --" /></SelectTrigger><SelectContent>{allSubcategories.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} &gt; {s.name}</SelectItem>)}</SelectContent></Select>
             </div>
           </div>
         )}
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave}>Save changes</Button>
-        </DialogFooter>
+        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={handleSave}>Save Changes</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
-
 export default CategorizationModal;
-
 --- FILE: ./client/src/components/ui/dialog.jsx ---
 import * as React from "react"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
@@ -4004,12 +4295,12 @@ function PlannedIncomeManager() {
 }
 export default PlannedIncomeManager;
 --- FILE: ./client/src/components/settings/RecurringBillsManager.jsx ---
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import * as api from '../../services/api';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Input } from '../ui/input';
 import { Button, buttonVariants } from '../ui/button';
-import { MoreHorizontal } from 'lucide-react';
+import { MoreHorizontal, PlusCircle } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '../ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../ui/alert-dialog';
@@ -4017,17 +4308,45 @@ import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Checkbox } from '../ui/checkbox';
 
-function RecurringBillsManager() {
+// This component can be used as a full-page manager or as a modal for creating a bill from a transaction
+function RecurringBillsManager({ isOpen: externalIsOpen, onClose: externalOnClose, billToCreateFromTx = null, onSave: externalOnSave}) {
   const [bills, setBills] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [subcategories, setSubcategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  
+  // Internal state for managing the dialog
+  const [isInternalDialogOpen, setInternalDialogOpen] = useState(false);
+  
   const [editingBill, setEditingBill] = useState(null);
-  const [formData, setFormData] = useState({});
+  
+  const getInitialFormData = () => ({
+    vendor_id: '',
+    subcategory_id: '',
+    amount: '',
+    day_of_month: '',
+    start_date: new Date().toISOString().split('T')[0],
+    end_date: '',
+    notes: '',
+  });
 
-  const fetchPageData = () => {
+  const [formData, setFormData] = useState(getInitialFormData());
+
+  const isControlled = externalIsOpen !== undefined;
+  const isOpen = isControlled ? externalIsOpen : isInternalDialogOpen;
+
+  const handleCloseDialog = () => {
+    setEditingBill(null);
+    setFormData(getInitialFormData()); 
+    if (isControlled) {
+      externalOnClose();
+    } else {
+      setInternalDialogOpen(false);
+    }
+  };
+  
+  const fetchPageData = useCallback(() => {
     setLoading(true);
     Promise.all([
       api.getActiveRecurringBills(),
@@ -4037,57 +4356,90 @@ function RecurringBillsManager() {
       setBills(billsData);
       setVendors(vendorsData);
       setSubcategories(subcategoriesData);
+      setError('');
     }).catch(err => {
       setError(err.message);
     }).finally(() => {
       setLoading(false);
     });
-  };
+  }, []);
 
   useEffect(() => {
-    fetchPageData();
-  }, []);
+    // Only fetch the full list of bills if we are in standalone mode.
+    if (!isControlled) {
+      fetchPageData();
+    } else {
+        // In modal mode, we still need vendors and subcategories for the form dropdowns
+        setLoading(true);
+         Promise.all([
+          api.getAllVendors(),
+          api.getAllSubcategories()
+        ]).then(([vendorsData, subcategoriesData]) => {
+            setVendors(vendorsData);
+            setSubcategories(subcategoriesData);
+            setLoading(false);
+        }).catch(err => {
+          setError(err.message);
+          setLoading(false);
+        });
+    }
+  }, [isControlled, fetchPageData]);
+  
+  // Effect to handle opening the dialog and pre-filling form data from either an existing bill or a transaction
+  useEffect(() => {
+    if (isOpen) {
+        if (billToCreateFromTx) {
+            setEditingBill(null);
+            setFormData({
+                vendor_id: billToCreateFromTx.vendor_id?.toString() || '',
+                subcategory_id: billToCreateFromTx.subcategory_id?.toString() || '',
+                amount: billToCreateFromTx.amount || '',
+                day_of_month: new Date(billToCreateFromTx.transaction_date).getUTCDate(), // Use UTC date to avoid timezone issues
+                start_date: new Date().toISOString().split('T')[0],
+                end_date: '',
+                notes: `From transaction: ${billToCreateFromTx.description_original}`,
+            });
+        } else if (editingBill) {
+            setFormData({
+                vendor_id: editingBill.vendor_id?.toString() || '',
+                subcategory_id: editingBill.subcategory_id?.toString() || '',
+                amount: editingBill.amount || '',
+                day_of_month: editingBill.day_of_month || '',
+                start_date: editingBill.start_date ? new Date(editingBill.start_date).toISOString().split('T')[0] : '',
+                end_date: editingBill.end_date ? new Date(editingBill.end_date).toISOString().split('T')[0] : '',
+                notes: editingBill.notes || '',
+            });
+        } else {
+            setEditingBill(null);
+            setFormData(getInitialFormData());
+        }
+    }
+  }, [isOpen, editingBill, billToCreateFromTx]);
 
   const handleOpenDialog = (bill = null) => {
     setEditingBill(bill);
-    setFormData({
-      vendor_id: bill?.vendor_id?.toString() || '',
-      subcategory_id: bill?.subcategory_id?.toString() || '',
-      amount: bill?.amount || '',
-      day_of_month: bill?.day_of_month || '',
-      start_date: bill?.start_date ? new Date(bill.start_date).toISOString().split('T')[0] : '',
-      notes: bill?.notes || '',
-      end_date: bill?.end_date ? new Date(bill.end_date).toISOString().split('T')[0] : '',
-      end_date_is_indefinite: bill ? bill.end_date_is_indefinite : true,
-      is_ongoing: bill ? !bill.start_date : false
-    });
-    setIsDialogOpen(true);
+    setInternalDialogOpen(true);
   };
-
+  
   const handleFormChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   const handleSelectChange = (name, value) => setFormData(prev => ({ ...prev, [name]: value }));
-  const handleCheckboxChange = (name, checked) => {
-    const newFormData = { ...formData, [name]: checked };
-    if (name === 'is_ongoing' && checked) { newFormData.start_date = ''; }
-    if (name === 'end_date_is_indefinite' && checked) { newFormData.end_date = ''; }
-    setFormData(newFormData);
-  };
-
+  
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const payload = { ...formData };
-    if (payload.is_ongoing) {
-      payload.start_date = new Date().toISOString().split('T')[0];
-    }
-
+    const payload = { ...formData, end_date: formData.end_date || null };
     try {
       if (editingBill) {
         await api.updateRecurringBill(editingBill.id, payload);
       } else {
         await api.createRecurringBill(payload);
       }
-      fetchPageData();
-      setIsDialogOpen(false);
+      
+      if (isControlled && externalOnSave) {
+        externalOnSave();
+      } else {
+        fetchPageData();
+      }
+      handleCloseDialog();
     } catch (err) { alert(`Error: ${err.message}`); }
   };
 
@@ -4100,29 +4452,39 @@ function RecurringBillsManager() {
 
   const formatCurrency = (value) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
 
-  if (loading) return <p>Loading recurring bills...</p>;
-  if (error) return <p className="text-red-500">Error: {error}</p>;
-
-  return (
-    <div className="space-y-4">
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+  const dialogComponent = (
+        <Dialog open={isOpen} onOpenChange={handleCloseDialog}>
             <DialogContent>
                 <DialogHeader><DialogTitle>{editingBill ? 'Edit' : 'Add'} Recurring Bill</DialogTitle></DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4 py-4">
-                    <div className="grid gap-2"><Label>Vendor</Label><Select onValueChange={(v) => handleSelectChange('vendor_id',v)} value={formData.vendor_id}><SelectTrigger><SelectValue placeholder="Select a vendor" /></SelectTrigger><SelectContent>{vendors.map(v => <SelectItem key={v.id} value={v.id.toString()}>{v.display_name}</SelectItem>)}</SelectContent></Select></div>
-                    <div className="grid gap-2"><Label>Category</Label><Select onValueChange={(v) => handleSelectChange('subcategory_id',v)} value={formData.subcategory_id}><SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger><SelectContent>{subcategories.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} > {s.name}</SelectItem>)}</SelectContent></Select></div>
+                    <div className="grid gap-2"><Label>Vendor</Label><Select name="vendor_id" onValueChange={(v) => handleSelectChange('vendor_id',v)} value={formData.vendor_id} required><SelectTrigger><SelectValue placeholder="Select a vendor" /></SelectTrigger><SelectContent>{vendors.map(v => <SelectItem key={v.id} value={v.id.toString()}>{v.display_name}</SelectItem>)}</SelectContent></Select></div>
+                    <div className="grid gap-2"><Label>Category</Label><Select name="subcategory_id" onValueChange={(v) => handleSelectChange('subcategory_id',v)} value={formData.subcategory_id} required><SelectTrigger><SelectValue placeholder="Select a category" /></SelectTrigger><SelectContent>{subcategories.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} &gt; {s.name}</SelectItem>)}</SelectContent></Select></div>
                     <div className="grid grid-cols-2 gap-4">
-                        <div className="grid gap-2"><Label htmlFor="amount">Amount (£)</Label><Input id="amount" name="amount" type="number" step="0.01" value={formData.amount} onChange={handleFormChange} required /></div>
-                        <div className="grid gap-2"><Label htmlFor="day_of_month">Day of Month</Label><Input id="day_of_month" name="day_of_month" type="number" min="1" max="31" value={formData.day_of_month} onChange={handleFormChange} required /></div>
+                        <div className="grid gap-2"><Label htmlFor="amount">Amount (£)</Label><Input id="amount" name="amount" type="number" step="0.01" value={formData.amount || ''} onChange={handleFormChange} required /></div>
+                        <div className="grid gap-2"><Label htmlFor="day_of_month">Day of Month</Label><Input id="day_of_month" name="day_of_month" type="number" min="1" max="31" value={formData.day_of_month || ''} onChange={handleFormChange} required /></div>
                     </div>
-                    <div className="grid gap-2"><Label htmlFor="start_date">Start Date</Label><Input id="start_date" name="start_date" type="date" value={formData.start_date} onChange={handleFormChange} disabled={formData.is_ongoing} /><div className="flex items-center space-x-2 mt-2"><Checkbox id="is_ongoing" checked={formData.is_ongoing} onCheckedChange={(c) => handleCheckboxChange('is_ongoing', c)} /><label htmlFor="is_ongoing" className="text-sm">Bill is already ongoing</label></div></div>
-                    <div className="grid gap-2"><Label htmlFor="end_date">End Date</Label><Input id="end_date" name="end_date" type="date" value={formData.end_date} onChange={handleFormChange} disabled={formData.end_date_is_indefinite} /><div className="flex items-center space-x-2 mt-2"><Checkbox id="end_date_is_indefinite" checked={formData.end_date_is_indefinite} onCheckedChange={(c) => handleCheckboxChange('end_date_is_indefinite', c)} /><label htmlFor="end_date_is_indefinite" className="text-sm">This bill does not end</label></div></div>
-                    <div className="grid gap-2"><Label htmlFor="notes">Notes</Label><Input id="notes" name="notes" value={formData.notes} onChange={handleFormChange} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="grid gap-2"><Label htmlFor="start_date">Start Date</Label><Input id="start_date" name="start_date" type="date" value={formData.start_date || ''} onChange={handleFormChange} required /></div>
+                      <div className="grid gap-2"><Label htmlFor="end_date">End Date (optional)</Label><Input id="end_date" name="end_date" type="date" value={formData.end_date || ''} onChange={handleFormChange} /></div>
+                    </div>
+                    <div className="grid gap-2"><Label htmlFor="notes">Notes</Label><Input id="notes" name="notes" value={formData.notes || ''} onChange={handleFormChange} /></div>
                     <DialogFooter><DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose><Button type="submit">{editingBill ? 'Update Bill' : 'Save Bill'}</Button></DialogFooter>
                 </form>
             </DialogContent>
         </Dialog>
-        <div className="flex justify-end items-center"><Button onClick={() => handleOpenDialog()}>Add Bill</Button></div>
+  );
+  
+  if (isControlled) {
+      return dialogComponent;
+  }
+  
+  if (loading && !isControlled) return <p>Loading recurring bills...</p>;
+  if (error && !isControlled) return <p className="text-red-500">Error: {error}</p>;
+
+  return (
+    <div className="space-y-4">
+        {dialogComponent}
+        <div className="flex justify-end items-center"><Button onClick={() => handleOpenDialog()}><PlusCircle className="h-4 w-4 mr-2"/>Add Bill</Button></div>
         <div className="rounded-md border">
             <Table>
                 <TableHeader><TableRow><TableHead>Vendor</TableHead><TableHead>Category</TableHead><TableHead>Amount</TableHead><TableHead>Day</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader>
@@ -4134,8 +4496,8 @@ function RecurringBillsManager() {
     </div>
   );
 }
-export default RecurringBillsManager;
 
+export default RecurringBillsManager;
 --- FILE: ./client/src/components/settings/CategoryManager.jsx ---
 import React, { useState, useEffect } from 'react';
 import * as api from '../../services/api';
@@ -4642,52 +5004,122 @@ function BudgetUploadTool() {
 export default BudgetUploadTool;
 
 --- FILE: ./client/src/components/settings/ApplicationSettings.jsx ---
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import * as api from '../../services/api';
 import { Button } from '../ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../ui/card';
+import ImportProfileManager from './ImportProfileManager';
+import { Download, Upload, RotateCw } from 'lucide-react';
 
 function ApplicationSettings() {
   const [message, setMessage] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isBackingUp, setIsBackingUp] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const fileInputRef = useRef(null);
 
   const handleRefresh = async () => {
-    setIsLoading(true);
+    setIsRefreshing(true);
     setMessage('');
+    setError('');
     try {
       const response = await api.refreshHolidays();
       setMessage(response.message);
-    } catch (error) {
-      setMessage(`Error: ${error.message}`);
+    } catch (err) {
+      setError(`Error: ${err.message}`);
+    } finally {
+      setIsRefreshing(false);
     }
-    setIsLoading(false);
+  };
+
+  const handleBackup = async () => {
+    setIsBackingUp(true);
+    setMessage('');
+    setError('');
+    try {
+      await api.downloadBackup();
+      setMessage('Backup downloaded successfully.');
+    } catch (err) {
+      setError(`Error creating backup: ${err.message}`);
+    } finally {
+      setIsBackingUp(false);
+    }
+  };
+  
+  const handleRestore = async (event) => {
+    const file = event.target.files[0];
+    if (!file) {
+      return;
+    }
+
+    setIsRestoring(true);
+    setMessage('');
+    setError('');
+
+    try {
+      const result = await api.restoreBackup(file);
+      setMessage(result.message + " Page will now reload.");
+      setTimeout(() => window.location.reload(), 2000);
+    } catch (err) {
+      setError(`Error restoring from backup: ${err.message}`);
+      setIsRestoring(false);
+    } 
+  };
+  
+  const triggerFileInput = () => {
+    fileInputRef.current.click();
   };
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Data Management</CardTitle>
-        <CardDescription>Manage application-wide data sources.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">Public Holidays</p>
-          <Button onClick={handleRefresh} disabled={isLoading}>
-            {isLoading ? 'Refreshing...' : 'Refresh from GOV.UK'}
-          </Button>
-        </div>
-      </CardContent>
-      {message && (
-        <CardFooter>
-          <p className="text-sm text-muted-foreground">{message}</p>
-        </CardFooter>
-      )}
-    </Card>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Data Management</CardTitle>
+          <CardDescription>Manage application-wide data sources and tools.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between p-4 border rounded-lg mb-4">
+            <p className="text-sm font-medium">Public Holidays</p>
+            <Button onClick={handleRefresh} disabled={isRefreshing} variant="outline">
+              {isRefreshing ? <><RotateCw className="mr-2 h-4 w-4 animate-spin" /> Refreshing...</> : 'Refresh from GOV.UK'}
+            </Button>
+          </div>
+        </CardContent>
+        {(message && !error) && (
+          <CardFooter>
+            <p className="text-sm text-green-600">{message}</p>
+          </CardFooter>
+        )}
+        {error && (
+            <CardFooter>
+                <p className="text-sm text-red-600">{error}</p>
+            </CardFooter>
+        )}
+      </Card>
+
+      <ImportProfileManager />
+
+      <Card className="border-blue-500">
+        <CardHeader>
+          <CardTitle>Backup & Restore</CardTitle>
+          <CardDescription>Download a full backup of your database or restore from a previous backup file.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex items-center gap-4">
+            <Button onClick={handleBackup} disabled={isBackingUp}>
+                {isBackingUp ? 'Generating...' : <> <Download className="mr-2 h-4 w-4" /> Download Full Backup</>}
+            </Button>
+            <input type="file" ref={fileInputRef} onChange={handleRestore} style={{ display: 'none' }} accept=".db" />
+            <Button onClick={triggerFileInput} variant="outline" disabled={isRestoring}>
+                {isRestoring ? 'Restoring...' : <><Upload className="mr-2 h-4 w-4" /> Restore from Backup</>}
+            </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
 export default ApplicationSettings;
-
 --- FILE: ./client/src/components/settings/ImportProfileManager.jsx ---
 import React, { useState, useEffect } from 'react';
 import * as api from '../../services/api';
@@ -5017,7 +5449,6 @@ function VendorManager() {
 }
 
 export default VendorManager;
-
 --- FILE: ./client/src/components/layout/Navbar.js ---
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
@@ -5179,106 +5610,148 @@ function BudgetBarChart({ data }) {
 export default BudgetBarChart;
 
 --- FILE: ./client/src/components/budgets/BudgetGrid.jsx ---
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import * as api from '../../services/api';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../ui/table';
 import { Input } from '../ui/input';
 import { Button } from '../ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
+
+const formatCurrency = (value) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
 
 function BudgetGrid({ year, month }) {
   const [budgetData, setBudgetData] = useState([]);
-  const [budgets, setBudgets] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const fetchBudgetData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api.getBudgetsByMonth(year, month);
+      setBudgetData(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchBudgetData = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getBudgetsByMonth(year, month);
-        setBudgetData(data);
-        const budgetMap = {};
-        data.forEach(b => {
-          budgetMap[b.category_id] = b.budgeted_amount;
-        });
-        setBudgets(budgetMap);
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchBudgetData();
   }, [year, month]);
 
-  const handleBudgetChange = (categoryId, amount) => {
-    setBudgets(prev => ({ ...prev, [categoryId]: amount }));
+  const handleBudgetChange = (subcategoryId, field, value) => {
+    setBudgetData(prevData =>
+      prevData.map(item =>
+        item.subcategory_id === subcategoryId ? { ...item, [field]: value } : item
+      )
+    );
   };
 
   const handleSaveChanges = async () => {
-    const budgetsToSave = budgetData.map(cat => ({
-      category_id: cat.category_id,
+    const budgetsToSave = budgetData.map(item => ({
+      subcategory_id: item.subcategory_id,
       year,
       month,
-      amount: parseFloat(budgets[cat.category_id] || 0)
+      amount: parseFloat(item.budgeted_amount || 0),
+      budget_type: item.budget_type,
     }));
     try {
       await api.setBudgetsBulk(budgetsToSave);
       alert('Budgets saved successfully!');
+      fetchBudgetData(); // Re-fetch to get fresh data
     } catch (err) {
       alert(`Error saving budgets: ${err.message}`);
     }
   };
+
+  const groupedBudgets = useMemo(() => {
+    return budgetData.reduce((acc, item) => {
+      const { category_name, category_id } = item;
+      if (!acc[category_id]) {
+        acc[category_id] = {
+          category_name,
+          subcategories: [],
+        };
+      }
+      acc[category_id].subcategories.push(item);
+      return acc;
+    }, {});
+  }, [budgetData]);
 
   if (loading) return <p>Loading budgets...</p>;
   if (error) return <p className="text-red-500">Error: {error}</p>;
 
   return (
     <div className="space-y-4">
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[250px]">Category</TableHead>
-              <TableHead>Recurring Bills</TableHead>
-              <TableHead>Budgeted Amount</TableHead>
-              <TableHead>Actual Spend</TableHead>
-              <TableHead>Remaining</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {budgetData.map((category) => {
-                const actualSpend = category.actual_spending || 0;
-                const budgeted = budgets[category.category_id] || 0;
-                const remaining = budgeted - actualSpend;
-                return (
-                  <TableRow key={category.category_id}>
-                    <TableCell className="font-medium">{category.category_name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(category.recurring_bills_total || 0)}
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        className="w-40"
-                        placeholder="0.00"
-                        value={budgets[category.category_id] || ''}
-                        onChange={(e) => handleBudgetChange(category.category_id, e.target.value)}
-                        min={category.recurring_bills_total || 0}
-                      />
-                    </TableCell>
-                    <TableCell>{new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(actualSpend)}</TableCell>
-                    <TableCell className={remaining < 0 ? 'text-destructive' : ''}>
-                      {new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(remaining)}
-                    </TableCell>
-                  </TableRow>
-                )
-            })}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex justify-end">
-        <Button onClick={handleSaveChanges}>Save Changes</Button>
+      <Accordion type="multiple" defaultValue={Object.keys(groupedBudgets)}>
+        {Object.entries(groupedBudgets).map(([categoryId, data]) => (
+          <AccordionItem key={categoryId} value={categoryId}>
+            <AccordionTrigger className="text-xl font-semibold p-4 bg-muted rounded-md">
+              {data.category_name}
+            </AccordionTrigger>
+            <AccordionContent>
+              <div className="p-1 border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[250px]">Subcategory</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Carry-over</TableHead>
+                      <TableHead>Recurring Bills</TableHead>
+                      <TableHead>Budgeted</TableHead>
+                      <TableHead>Actual</TableHead>
+                      <TableHead>Remaining</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.subcategories.map((sc) => {
+                      const effectiveBudget = (parseFloat(sc.budgeted_amount) || 0) + (sc.carryover_amount || 0);
+                      const remaining = effectiveBudget - (sc.actual_spending || 0);
+                      return (
+                        <TableRow key={sc.subcategory_id}>
+                          <TableCell className="font-medium">{sc.subcategory_name}</TableCell>
+                          <TableCell>
+                            <Select
+                              value={sc.budget_type}
+                              onValueChange={(value) => handleBudgetChange(sc.subcategory_id, 'budget_type', value)}
+                            >
+                              <SelectTrigger className="w-[120px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="allowance">Allowance</SelectItem>
+                                <SelectItem value="rolling">Rolling</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{formatCurrency(sc.carryover_amount)}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatCurrency(sc.recurring_bills_total)}</TableCell>
+                          <TableCell>
+                            <Input
+                              type="number"
+                              className="w-32"
+                              value={sc.budgeted_amount}
+                              onChange={(e) => handleBudgetChange(sc.subcategory_id, 'budgeted_amount', e.target.value)}
+                              min={sc.recurring_bills_total || 0}
+                            />
+                          </TableCell>
+                          <TableCell>{formatCurrency(sc.actual_spending)}</TableCell>
+                          <TableCell className={remaining < 0 ? 'text-destructive' : ''}>
+                            {formatCurrency(remaining)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
+      <div className="flex justify-end mt-4">
+        <Button onClick={handleSaveChanges}>Save All Changes</Button>
       </div>
     </div>
   );
@@ -5293,16 +5766,24 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Trash2, PlusCircle } from 'lucide-react';
+import { Label } from './ui/label';
 
-function SplitTransactionModal({ transaction, allSubcategories, onClose, onSave }) {
+function SplitTransactionModal({ transaction, allSubcategories, allVendors, onClose, onSave }) {
   const [splits, setSplits] = useState([{ subcategory_id: '', amount: '' }]);
   const [remainingAmount, setRemainingAmount] = useState(0);
+  const [selectedVendor, setSelectedVendor] = useState('');
+  const [newVendorName, setNewVendorName] = useState('');
+
   const isOpen = !!transaction;
 
   useEffect(() => {
     if (transaction) {
       setSplits([{ subcategory_id: '', amount: '' }, { subcategory_id: '', amount: '' }]);
       setRemainingAmount(transaction.amount);
+      setSelectedVendor(transaction.vendor_id?.toString() || '');
+      setNewVendorName('');
+    } else {
+      setSplits([{ subcategory_id: '', amount: '' }]);
     }
   }, [transaction]);
 
@@ -5328,9 +5809,26 @@ function SplitTransactionModal({ transaction, allSubcategories, onClose, onSave 
       return;
     }
     try {
-      const validSplits = splits.filter(s => s.subcategory_id && s.amount);
-      await api.splitTransaction(transaction.id, validSplits);
+      let vendorIdToSave = selectedVendor;
+      if (selectedVendor === 'new' && newVendorName) {
+        const newVendor = await api.createVendor({ name: newVendorName.toLowerCase().replace(/\s/g, ''), displayName: newVendorName });
+        vendorIdToSave = newVendor.id.toString();
+      }
+      
+      const validSplits = splits.filter(s => s.subcategory_id && s.amount > 0);
+      if (validSplits.length === 0) {
+        alert("You must add at least one valid split line.");
+        return;
+      }
+      
+      const payload = {
+        splits: validSplits,
+        vendor_id: vendorIdToSave
+      };
+
+      await api.splitTransaction(transaction.id, payload);
       onSave();
+      onClose();
     } catch (error) {
       alert(`Error: ${error.message}`);
     }
@@ -5349,7 +5847,7 @@ function SplitTransactionModal({ transaction, allSubcategories, onClose, onSave 
           <div className="py-4 space-y-4">
             <div className="flex justify-between items-center bg-muted p-3 rounded-md">
               <div className="text-sm">
-                <p>{transaction.transaction_date}: <span className="font-medium">{transaction.description_original}</span></p>
+                <p>{new Date(transaction.transaction_date).toLocaleDateString("en-GB")}: <span className="font-medium">{transaction.description_original}</span></p>
               </div>
               <div className="text-right">
                 <p className="font-bold text-lg">{formatCurrency(transaction.amount)}</p>
@@ -5358,12 +5856,25 @@ function SplitTransactionModal({ transaction, allSubcategories, onClose, onSave 
                 </p>
               </div>
             </div>
+
+            <div className="grid gap-2">
+              <Label>Vendor</Label>
+              <Select onValueChange={setSelectedVendor} value={selectedVendor}>
+                <SelectTrigger><SelectValue placeholder="-- Select Vendor --" /></SelectTrigger>
+                <SelectContent>
+                  {allVendors.map(v => <SelectItem key={v.id} value={v.id.toString()}>{v.display_name}</SelectItem>)}
+                  <SelectItem value="new">-- Create New Vendor --</SelectItem>
+                </SelectContent>
+              </Select>
+              {selectedVendor === 'new' && ( <Input placeholder="New Vendor Name" value={newVendorName} onChange={(e) => setNewVendorName(e.target.value)} className="mt-2" /> )}
+            </div>
+
             <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
               {splits.map((split, index) => (
                 <div key={index} className="flex items-center gap-2">
                   <Select onValueChange={(value) => handleSplitChange(index, 'subcategory_id', value)} value={split.subcategory_id}>
                       <SelectTrigger><SelectValue placeholder="Select Category" /></SelectTrigger>
-                      <SelectContent>{allSubcategories.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} > {s.name}</SelectItem>)}</SelectContent>
+                      <SelectContent>{allSubcategories.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} &gt; {s.name}</SelectItem>)}</SelectContent>
                   </Select>
                   <Input type="number" placeholder="Amount" value={split.amount} onChange={(e) => handleSplitChange(index, 'amount', e.target.value)} className="w-32"/>
                   <Button variant="ghost" size="icon" onClick={() => removeSplit(index)} disabled={splits.length <= 1}><Trash2 className="h-4 w-4" /></Button>
@@ -5383,7 +5894,6 @@ function SplitTransactionModal({ transaction, allSubcategories, onClose, onSave 
 }
 
 export default SplitTransactionModal;
-
 --- FILE: ./client/src/lib/utils.js ---
 import { clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
@@ -5643,7 +6153,7 @@ function TransactionsPage() {
       alert("No import profiles found. Please create one in Settings > Import Profiles first.");
       return;
     }
-    setSelectedProfileId(importProfiles[0].id.toString());
+    setSelectedProfileId(importProfiles.length > 0 ? importProfiles[0].id.toString() : '');
     setIsImportModalOpen(true);
   };
 
@@ -5701,7 +6211,7 @@ function TransactionsPage() {
         <Tabs defaultValue="all-transactions">
             <TabsList className="grid w-full grid-cols-2"><TabsTrigger value="all-transactions">All Transactions</TabsTrigger><TabsTrigger value="ignored">Ignored Duplicates</TabsTrigger></TabsList>
             <TabsContent value="all-transactions">
-                 <Accordion type="single" collapsible defaultValue={Object.keys(groupedTransactions)[0]} className="w-full space-y-4">
+                 <Accordion type="multiple" defaultValue={Object.keys(groupedTransactions).slice(0, 1)} className="w-full space-y-4">
                     {Object.keys(groupedTransactions).map(month => (
                         <AccordionItem key={month} value={month}>
                             <AccordionTrigger className="text-xl font-semibold p-4 bg-muted rounded-md">{month}</AccordionTrigger>
@@ -5715,7 +6225,7 @@ function TransactionsPage() {
       </div>
 
       <CategorizationModal transaction={transactionToCategorize} allSubcategories={allSubcategories} allVendors={allVendors} onClose={() => setTransactionToCategorize(null)} onSave={fetchPageData} />
-      <SplitTransactionModal transaction={transactionToSplit} allSubcategories={allSubcategories} onClose={() => setTransactionToSplit(null)} onSave={fetchPageData} />
+      <SplitTransactionModal transaction={transactionToSplit} allSubcategories={allSubcategories} allVendors={allVendors} onClose={() => setTransactionToSplit(null)} onSave={fetchPageData} />
       
       {isRecurringModalOpen && (
           <RecurringBillsManager isOpen={isRecurringModalOpen} onClose={() => setIsRecurringModalOpen(false)} billToCreateFromTx={transactionToMakeRecurring} onSave={fetchPageData} />
@@ -5770,7 +6280,7 @@ function SettingsPage() {
 
         <TabsContent value="categories">
           <Card>
-            <CardHeader><CardTitle>Manage Categories</CardTitle><CardDescription>Add, edit, or delete your spending categories.</CardDescription></CardHeader>
+            <CardHeader><CardTitle>Manage Categories</CardTitle><CardDescription>Add, edit, or delete your spending categories and link them to savings accounts.</CardDescription></CardHeader>
             <CardContent className="space-y-2"><CategoryManager /></CardContent>
           </Card>
         </TabsContent>
@@ -5802,22 +6312,13 @@ function SettingsPage() {
             <CardContent className="space-y-2"><SavingsManager /></CardContent>
           </Card>
         </TabsContent>
-
+        
         <TabsContent value="budget_tools">
             <BudgetUploadTool />
         </TabsContent>
 
         <TabsContent value="app">
           <ApplicationSettings />
-           <Card className="mt-6 border-blue-500">
-             <CardHeader>
-                <CardTitle>Backup & Restore</CardTitle>
-                <CardDescription>Download a full backup of your database or restore from a file.</CardDescription>
-             </CardHeader>
-             <CardContent>
-                <p className="text-sm text-muted-foreground">This functionality will be implemented in the final step.</p>
-             </CardContent>
-          </Card>
         </TabsContent>
 
       </Tabs>
@@ -5826,9 +6327,8 @@ function SettingsPage() {
 }
 
 export default SettingsPage;
-
 --- FILE: ./client/src/pages/InitialSetupPage.jsx ---
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import * as api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/ui/button';
@@ -5837,97 +6337,146 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
+function RestoreBackup({ onRestored }) {
+    const [isRestoring, setIsRestoring] = useState(false);
+    const [error, setError] = useState('');
+    const fileInputRef = useRef(null);
+
+    const handleFileChange = async (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        setIsRestoring(true);
+        setError('');
+        try {
+            const result = await api.restoreBackup(file);
+            alert(result.message + "\n\nThe application will now reload.");
+            // Give the server time to restart before re-initializing the app
+            setTimeout(() => {
+                onRestored();
+                window.location.reload(); // Force a full page reload
+            }, 3000); 
+        } catch (err) {
+            setError(err.message);
+            setIsRestoring(false);
+        }
+    };
+
+    return (
+        <Card className="mt-8 border-dashed">
+            <CardHeader>
+                <CardTitle>Restore From Backup</CardTitle>
+                <CardDescription>If you have a backup file, you can restore the application to its previous state here. The application will restart.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex items-center gap-4">
+                <Input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".db" disabled={isRestoring} className="hidden" id="backup-file-input"/>
+                <Button onClick={() => fileInputRef.current.click()} disabled={isRestoring} className="w-full">
+                    {isRestoring ? 'Restoring...' : 'Upload & Restore'}
+                </Button>
+            </CardContent>
+            {error && <CardContent><p className="text-sm text-red-600">{error}</p></CardContent>}
+        </Card>
+    );
+}
+
+
 function InitialSetupPage() {
   const [jurisdiction, setJurisdiction] = useState('');
   const [fiscalDayStart, setFiscalDayStart] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const { login, reloadSettings } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const { initializeApp, login } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setIsLoading(true);
+
     if (!jurisdiction || !fiscalDayStart || !email || !password) {
       setError('All fields are required.');
+      setIsLoading(false);
       return;
     }
     try {
-      // Step 1: Register the first user. The API now prevents further registrations.
       await api.register(email, password);
-
-      // Step 2: Log in to get an auth token for subsequent requests.
-      const loginData = await api.login(email, password);
-      localStorage.setItem('authToken', loginData.token); // Manually set token for the next call
-
-      // Step 3: Save the initial application settings.
+      const tempLoginData = await api.login(email, password);
+      if (!tempLoginData.token) throw new Error("Failed to acquire temporary token for setup.");
+      
       await api.saveAppSettings({
         jurisdiction,
         fiscal_day_start: parseInt(fiscalDayStart, 10),
-      });
+      }, tempLoginData.token);
 
-      // Step 4: Use the context's reload function to refresh the app state.
-      // This will set the new token in the context and fetch the completed settings.
       await login(email, password);
-      await reloadSettings();
 
     } catch (err) {
       setError(err.message);
-      localStorage.removeItem('authToken'); // Clean up token on failure
+      localStorage.removeItem('authToken');
+    } finally {
+        setIsLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <CardTitle className="text-2xl">Initial Application Setup</CardTitle>
-          <CardDescription>
-            Welcome! Please create your admin account and configure your financial calendar.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="space-y-2">
-                <Label>Admin Account</Label>
-                <div className="grid grid-cols-2 gap-4">
-                    <Input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required/>
-                    <Input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required/>
-                </div>
-            </div>
+    <div className="flex items-center justify-center min-h-screen bg-gray-100 p-4">
+      <div className="w-full max-w-lg">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-2xl">Initial Application Setup</CardTitle>
+            <CardDescription>
+              Welcome! Please create your admin account and configure your financial calendar.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="space-y-2">
+                  <Label>Admin Account</Label>
+                  <div className="grid grid-cols-2 gap-4">
+                      <Input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} required disabled={isLoading}/>
+                      <Input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} required disabled={isLoading}/>
+                  </div>
+              </div>
+  
+              <div className="space-y-2">
+                <Label htmlFor="jurisdiction">Your Jurisdiction</Label>
+                <Select onValueChange={setJurisdiction} value={jurisdiction} disabled={isLoading}>
+                  <SelectTrigger id="jurisdiction"><SelectValue placeholder="Select your region..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="england-and-wales">England and Wales</SelectItem>
+                    <SelectItem value="scotland">Scotland</SelectItem>
+                    <SelectItem value="northern-ireland">Northern Ireland</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+  
+              <div className="space-y-2">
+                <Label htmlFor="fiscalDay">Financial Month Start Day</Label>
+                <Input
+                  id="fiscalDay"
+                  type="number"
+                  min="1"
+                  max="28"
+                  placeholder="e.g., 28"
+                  value={fiscalDayStart}
+                  onChange={(e) => setFiscalDayStart(e.target.value)}
+                  required
+                  disabled={isLoading}
+                />
+              </div>
+  
+              {error && <p className="text-sm text-red-600">{error}</p>}
+  
+              <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? 'Saving...' : 'Save Configuration and Start'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
-            <div className="space-y-2">
-              <Label htmlFor="jurisdiction">Your Jurisdiction</Label>
-              <Select onValueChange={setJurisdiction} value={jurisdiction}>
-                <SelectTrigger id="jurisdiction"><SelectValue placeholder="Select your region..." /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="england-and-wales">England and Wales</SelectItem>
-                  <SelectItem value="scotland">Scotland</SelectItem>
-                  <SelectItem value="northern-ireland">Northern Ireland</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="fiscalDay">Financial Month Start Day</Label>
-              <Input
-                id="fiscalDay"
-                type="number"
-                min="1"
-                max="28"
-                placeholder="e.g., 28"
-                value={fiscalDayStart}
-                onChange={(e) => setFiscalDayStart(e.target.value)}
-                required
-              />
-            </div>
-
-            {error && <p className="text-sm text-red-600">{error}</p>}
-
-            <Button type="submit" className="w-full">Save Configuration and Start</Button>
-          </form>
-        </CardContent>
-      </Card>
+        <RestoreBackup onRestored={initializeApp} />
+      </div>
     </div>
   );
 }
@@ -6014,16 +6563,16 @@ function SavingsPage() {
 export default SavingsPage;
 --- FILE: ./client/src/pages/Dashboard.js ---
 import React, { useState, useEffect } from 'react';
-import { getDashboardSummary, getForecast, getAllSavingsAccounts } from '../services/api';
-import BudgetBarChart from '../components/charts/BudgetBarChart';
+import * as api from '../services/api';
 import SavingsDonutChart from '../components/charts/SavingsDonutChart';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { CheckCircle, XCircle } from 'lucide-react';
+
+const formatCurrency = (value) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
 
 function Dashboard() {
-  const [summaryData, setSummaryData] = useState(null);
-  const [forecastData, setForecastData] = useState(null);
-  const [savingsAccounts, setSavingsAccounts] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -6031,14 +6580,9 @@ function Dashboard() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const [summary, forecast, savings] = await Promise.all([
-          getDashboardSummary(),
-          getForecast(),
-          getAllSavingsAccounts()
-        ]);
-        setSummaryData(summary);
-        setForecastData(forecast);
-        setSavingsAccounts(savings);
+        setError('');
+        const dashboardData = await api.getDashboardData();
+        setData(dashboardData);
       } catch (err) {
         setError(err.message);
       } finally {
@@ -6048,90 +6592,94 @@ function Dashboard() {
     fetchData();
   }, []);
 
-  const formatCurrency = (value) =>
-    new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
-
-  const ForecastTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="p-2 border rounded-md bg-background shadow-sm">
-          <p className="font-bold">{`Date: ${label}`}</p>
-          <p className="text-sm text-primary">{`Projected Balance: ${formatCurrency(payload[0].value)}`}</p>
-        </div>
-      );
-    }
-    return null;
-  };
-
-  const summary = summaryData?.month_to_date_summary;
-  const allGoals = savingsAccounts.flatMap(acc => acc.goals);
+  if (loading) return <p className="p-4 md:p-6">Loading dashboard...</p>;
+  if (error) return <p className="p-4 md:p-6 text-red-600">Error: {error}</p>;
+  if (!data) return null;
 
   return (
     <div className="container mx-auto p-4 md:p-6 space-y-6">
       <h1 className="text-3xl font-bold">Dashboard</h1>
-      {loading && <p>Loading financial summary...</p>}
-      {error && <p className="text-red-600">Error: {error}</p>}
 
-      {!loading && summaryData && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Income</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold text-green-600">{formatCurrency(summary.total_income)}</div></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Spending</CardTitle></CardHeader>
-            <CardContent><div className="text-2xl font-bold text-red-600">{formatCurrency(summary.total_spending)}</div></CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Surplus / Deficit</CardTitle></CardHeader>
-            <CardContent><div className={`text-2xl font-bold ${summary.surplus_deficit >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>{formatCurrency(summary.surplus_deficit)}</div></CardContent>
-          </Card>
-        </div>
-      )}
-
-      {!loading && allGoals.length > 0 && (
+      {/* Top Row Metrics */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
-          <CardHeader>
-            <CardTitle>Savings Goals</CardTitle>
-            <CardDescription>Your progress towards your financial goals.</CardDescription>
-          </CardHeader>
+          <CardHeader><CardTitle>Income Received</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold text-green-600">{formatCurrency(data.summary.totalIncome)}</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Total Spending</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold text-red-600">{formatCurrency(data.summary.totalSpending)}</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Planned Surplus</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold">{formatCurrency(data.summary.plannedSurplus)}</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>Current Surplus</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold text-blue-600">{formatCurrency(data.summary.currentSurplus)}</p></CardContent>
+        </Card>
+      </div>
+
+      {/* Second Row: Income Details & In-Month Cashflow */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+            <CardHeader><CardTitle>Monthly Income Status</CardTitle></CardHeader>
+            <CardContent>
+                <ul className="space-y-2">
+                    {data.incomeStatus.map(item => (
+                        <li key={item.id} className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">{item.source_name}</span>
+                            <div className="flex items-center gap-2">
+                                <span className="font-medium">{formatCurrency(item.amount)}</span>
+                                {item.received ? <CheckCircle className="h-5 w-5 text-green-500"/> : <XCircle className="h-5 w-5 text-gray-400"/>}
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle>In-Month Cashflow</CardTitle><CardDescription>Daily actual cashflow for the current financial month.</CardDescription></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={data.inMonthCashflow}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick).getDate()} />
+                <YAxis tickFormatter={formatCurrency} />
+                <Tooltip formatter={(value) => formatCurrency(value)} />
+                <Line type="monotone" dataKey="actual" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} name="Actual Balance" />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+      
+      {/* Savings Goals */}
+      {data.savingsGoals.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Savings Goals Progress</CardTitle></CardHeader>
           <CardContent className="grid gap-8 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {allGoals.map(goal => (
-              <SavingsDonutChart key={goal.id} goal={goal} />
-            ))}
+            {data.savingsGoals.map(goal => (<SavingsDonutChart key={goal.id} goal={goal} />))}
           </CardContent>
         </Card>
       )}
 
-      {!loading && forecastData && (
-         <Card>
-            <CardHeader>
-              <CardTitle>12-Month Cashflow Forecast</CardTitle>
-              <CardDescription>Projected balance based on recurring bills and planned income.</CardDescription>
-            </CardHeader>
-            <CardContent>
-               <div style={{ width: '100%', height: 300 }}>
-                  <ResponsiveContainer>
-                    <LineChart data={forecastData} margin={{ top: 5, right: 20, left: 30, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick).toLocaleDateString('en-GB', { month: 'short' })} />
-                      <YAxis tickFormatter={formatCurrency} domain={['auto', 'auto']} />
-                      <Tooltip content={<ForecastTooltip />} />
-                      <Legend />
-                      <Line type="monotone" dataKey="running_balance" name="Projected Balance" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-               </div>
-            </CardContent>
-          </Card>
-      )}
-
-      {!loading && summaryData && (
-        <Card>
-          <CardHeader><CardTitle>Budget vs. Actual Spending</CardTitle></CardHeader>
-          <CardContent><BudgetBarChart data={summaryData.budget_vs_actual} /></CardContent>
-        </Card>
-      )}
+      {/* 12-Month Forecast */}
+      <Card>
+        <CardHeader><CardTitle>12-Month Cashflow Forecast</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={data.twelveMonthForecast}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="date" tickFormatter={(tick) => new Date(tick).toLocaleDateString('en-GB', { month: 'short' })} />
+              <YAxis tickFormatter={formatCurrency} domain={['auto', 'auto']} />
+              <Tooltip formatter={(value) => formatCurrency(value)} />
+              <Legend />
+              <Line type="monotone" dataKey="running_balance" name="Projected Balance" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -6272,10 +6820,14 @@ async function fetchApi(url, options = {}, isFile = false) {
 
   const contentType = response.headers.get("content-type");
   
-  if (contentType && contentType.indexOf("application/json") !== -1) {
+  if (contentType && contentType.includes("application/json")) {
       const data = await response.json();
       if (!response.ok) { throw new Error(data.message || 'An API error occurred.'); }
       return data;
+  }
+  
+  if (response.ok && (contentType?.includes('application/x-sqlite3') || contentType?.includes('text/csv'))) {
+      return await response.blob();
   }
   
   if (response.ok) {
@@ -6283,9 +6835,7 @@ async function fetchApi(url, options = {}, isFile = false) {
   }
 
   const textData = await response.text();
-  const errorMatch = textData.match(/<pre>(.*?)<br>/);
-  const errorMessage = errorMatch ? errorMatch[1] : 'An API error occurred.';
-  throw new Error(errorMessage);
+  throw new Error(textData || 'An API error occurred.');
 }
 
 // AUTH
@@ -6310,21 +6860,22 @@ export async function uploadTransactionsFile(file, profileId) {
     return fetchApi('/transactions/upload', { method: 'POST', body: formData }, true); 
 }
 export async function getAllTransactions() { return fetchApi('/transactions'); }
-export async function categorizeTransaction(transactionId, subcategoryId) { return fetchApi(`/transactions/${transactionId}/categorize`, { method: 'PUT', body: JSON.stringify({ subcategory_id: subcategoryId }) }); }
+export async function categorizeTransaction(transactionId, data) { return fetchApi(`/transactions/${transactionId}/categorize`, { method: 'PUT', body: JSON.stringify(data) }); }
 export async function updateTransactionVendor(transactionId, vendorId) { return fetchApi(`/transactions/${transactionId}/vendor`, { method: 'PUT', body: JSON.stringify({ vendor_id: vendorId }) }); }
-export async function splitTransaction(transactionId, splits) { return fetchApi(`/transactions/${transactionId}/split`, { method: 'POST', body: JSON.stringify({ splits }) }); }
+export async function splitTransaction(transactionId, data) { return fetchApi(`/transactions/${transactionId}/split`, { method: 'POST', body: JSON.stringify({ splits: data.splits, vendor_id: data.vendor_id }) }); }
 export async function getIgnoredTransactions() { return fetchApi('/transactions/ignored'); }
 export async function reinstateTransaction(id) { return fetchApi(`/transactions/ignored/${id}/reinstate`, { method: 'POST', }); }
 export async function purgeIgnoredTransactions() { return fetchApi('/transactions/ignored/purge', { method: 'DELETE', }); }
 export async function applyCategorizationRules() { return fetchApi('/transactions/apply-rules', { method: 'POST', }); }
 
 // DASHBOARD & FORECAST
-export async function getDashboardSummary() { return fetchApi('/dashboard/monthly-summary'); }
+export async function getDashboardData() { return fetchApi('/dashboard'); }
 export async function getForecast() { return fetchApi('/forecast/cashflow'); }
 
 // DATA MANAGEMENT
 export async function getCategoriesWithSubcategories() { return fetchApi('/categories?with_subcategories=true'); }
 export async function createCategory(name) { return fetchApi('/categories', { method: 'POST', body: JSON.stringify({ name }) }); }
+export async function updateCategory(id, data) { return fetchApi(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }); }
 export async function deleteCategory(id) { return fetchApi(`/categories/${id}`, { method: 'DELETE', }); }
 export async function createSubcategory(categoryId, name) { return fetchApi(`/categories/${categoryId}/subcategories`, { method: 'POST', body: JSON.stringify({ name }) }); }
 export async function deleteSubcategory(categoryId, subcategoryId) { return fetchApi(`/categories/${categoryId}/subcategories/${subcategoryId}`, { method: 'DELETE', }); }
@@ -6341,7 +6892,7 @@ export async function deactivateRecurringBill(id) { return fetchApi(`/recurring-
 // BUDGETS
 export async function getBudgetsByMonth(year, month) { return fetchApi(`/budgets/${year}/${month}`); }
 export async function setBudgetsBulk(budgets) { return fetchApi('/budgets/bulk', { method: 'POST', body: JSON.stringify({ budgets }) }); }
-export async function getBudgetTemplate() { return fetchApi('/budgets/template'); }
+export async function getBudgetTemplate() { return fetchApi('/budgets/template', {}, true); }
 export async function uploadBudget(file) { const formData = new FormData(); formData.append('budgetFile', file); return fetchApi('/budgets/upload', { method: 'POST', body: formData }, true); }
 
 // PLANNED INCOME
@@ -6354,8 +6905,27 @@ export async function deactivatePlannedIncome(id) { return fetchApi(`/planned-in
 export async function getAllSavingsAccounts() { return fetchApi('/savings/accounts'); }
 export async function createSavingsAccount(accountData) { return fetchApi('/savings/accounts', { method: 'POST', body: JSON.stringify(accountData) }); }
 export async function updateSavingsAccount(id, accountData) { return fetchApi(`/savings/accounts/${id}`, { method: 'PUT', body: JSON.stringify(accountData) }); }
-export async function deleteSavingsAccount(id) { return fetchApi(`/savings/accounts/${id}`, { method: 'DELETE', }); }
+export async function deleteSavingsAccount(id) { return fetchApi(`/savings/accounts/${id}`, { method: 'DELETE' }); }
 export async function createSavingsGoal(goalData) { return fetchApi('/savings/goals', { method: 'POST', body: JSON.stringify(goalData) }); }
 export async function updateSavingsGoal(id, goalData) { return fetchApi(`/savings/goals/${id}`, { method: 'PUT', body: JSON.stringify(goalData) }); }
-export async function deleteSavingsGoal(id) { return fetchApi(`/savings/goals/${id}`, { method: 'DELETE', }); }
+export async function deleteSavingsGoal(id) { return fetchApi(`/savings/goals/${id}`, { method: 'DELETE' }); }
 export async function withdrawFromSavingsGoal(id, withdrawalData) { return fetchApi(`/savings/goals/${id}/withdraw`, { method: 'POST', body: JSON.stringify(withdrawalData) }); }
+
+// BACKUP
+export async function downloadBackup() {
+    const blob = await fetchApi('/backup/create', {}, true);
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `budget_backup_${new Date().toISOString().split('T')[0]}.db`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+}
+
+export async function restoreBackup(file) {
+    const formData = new FormData();
+    formData.append('backupFile', file);
+    return fetchApi('/backup/restore', { method: 'POST', body: formData }, true);
+}

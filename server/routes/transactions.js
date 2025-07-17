@@ -4,10 +4,13 @@ const multer = require('multer');
 const TransactionController = require('../controllers/transactionController');
 const isAuthenticated = require('../middleware/isAuthenticated');
 
-const upload = multer({ dest: 'data/uploads/' });
+// Use memory storage for multer to handle the file buffer directly
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 router.use(isAuthenticated);
 
+// The upload middleware now uses memory storage
 router.post('/upload', upload.single('transactionsFile'), TransactionController.uploadTransactions);
 router.post('/apply-rules', TransactionController.applyRules);
 

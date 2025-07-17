@@ -8,6 +8,7 @@ const PORT = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json());
 
+// --- API Routes ---
 const authRoutes = require('./routes/auth');
 const categoryRoutes = require('./routes/categories');
 const vendorRoutes = require('./routes/vendors');
@@ -20,7 +21,8 @@ const subcategoryRoutes = require('./routes/subcategories');
 const settingsRoutes = require('./routes/settings');
 const savingsGoalsRoutes = require('./routes/savingsGoals');
 const plannedIncomeRoutes = require('./routes/plannedIncome');
-const importProfileRoutes = require('./routes/importProfiles'); // <-- NEW
+const importProfileRoutes = require('./routes/importProfiles');
+const backupRoutes = require('./routes/backup'); // <-- NEW
 
 app.use('/api/auth', authRoutes);
 app.use('/api/categories', categoryRoutes);
@@ -34,7 +36,8 @@ app.use('/api/subcategories', subcategoryRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/savings', savingsGoalsRoutes);
 app.use('/api/planned-income', plannedIncomeRoutes);
-app.use('/api/import-profiles', importProfileRoutes); // <-- NEW
+app.use('/api/import-profiles', importProfileRoutes);
+app.use('/api/backup', backupRoutes); // <-- NEW
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 

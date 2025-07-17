@@ -24,14 +24,16 @@ async function fetchApi(url, options = {}, isFile = false) {
       return data;
   }
   
+  if (response.ok && (contentType?.includes('application/x-sqlite3') || contentType?.includes('text/csv'))) {
+      return await response.blob();
+  }
+  
   if (response.ok) {
     return response.text();
   }
 
   const textData = await response.text();
-  const errorMatch = textData.match(/<pre>(.*?)<br>/);
-  const errorMessage = errorMatch ? errorMatch[1] : 'An API error occurred.';
-  throw new Error(errorMessage);
+  throw new Error(textData || 'An API error occurred.');
 }
 
 // AUTH
@@ -56,9 +58,8 @@ export async function uploadTransactionsFile(file, profileId) {
     return fetchApi('/transactions/upload', { method: 'POST', body: formData }, true); 
 }
 export async function getAllTransactions() { return fetchApi('/transactions'); }
-export async function categorizeTransaction(transactionId, subcategoryId) { return fetchApi(`/transactions/${transactionId}/categorize`, { method: 'PUT', body: JSON.stringify({ subcategory_id: subcategoryId }) }); }
-export async function updateTransactionVendor(transactionId, vendorId) { return fetchApi(`/transactions/${transactionId}/vendor`, { method: 'PUT', body: JSON.stringify({ vendor_id: vendorId }) }); }
-export async function splitTransaction(transactionId, splits) { return fetchApi(`/transactions/${transactionId}/split`, { method: 'POST', body: JSON.stringify({ splits }) }); }
+export async function categorizeTransaction(transactionId, data) { return fetchApi(`/transactions/${transactionId}/categorize`, { method: 'PUT', body: JSON.stringify(data) }); }
+export async function splitTransaction(transactionId, data) { return fetchApi(`/transactions/${transactionId}/split`, { method: 'POST', body: JSON.stringify({ splits: data.splits, vendor_id: data.vendor_id }) }); }
 export async function getIgnoredTransactions() { return fetchApi('/transactions/ignored'); }
 export async function reinstateTransaction(id) { return fetchApi(`/transactions/ignored/${id}/reinstate`, { method: 'POST', }); }
 export async function purgeIgnoredTransactions() { return fetchApi('/transactions/ignored/purge', { method: 'DELETE', }); }
@@ -71,6 +72,7 @@ export async function getForecast() { return fetchApi('/forecast/cashflow'); }
 // DATA MANAGEMENT
 export async function getCategoriesWithSubcategories() { return fetchApi('/categories?with_subcategories=true'); }
 export async function createCategory(name) { return fetchApi('/categories', { method: 'POST', body: JSON.stringify({ name }) }); }
+export async function updateCategory(id, data) { return fetchApi(`/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) }); }
 export async function deleteCategory(id) { return fetchApi(`/categories/${id}`, { method: 'DELETE', }); }
 export async function createSubcategory(categoryId, name) { return fetchApi(`/categories/${categoryId}/subcategories`, { method: 'POST', body: JSON.stringify({ name }) }); }
 export async function deleteSubcategory(categoryId, subcategoryId) { return fetchApi(`/categories/${categoryId}/subcategories/${subcategoryId}`, { method: 'DELETE', }); }
@@ -87,7 +89,7 @@ export async function deactivateRecurringBill(id) { return fetchApi(`/recurring-
 // BUDGETS
 export async function getBudgetsByMonth(year, month) { return fetchApi(`/budgets/${year}/${month}`); }
 export async function setBudgetsBulk(budgets) { return fetchApi('/budgets/bulk', { method: 'POST', body: JSON.stringify({ budgets }) }); }
-export async function getBudgetTemplate() { return fetchApi('/budgets/template'); }
+export async function getBudgetTemplate() { return fetchApi('/budgets/template', {}, true); }
 export async function uploadBudget(file) { const formData = new FormData(); formData.append('budgetFile', file); return fetchApi('/budgets/upload', { method: 'POST', body: formData }, true); }
 
 // PLANNED INCOME
@@ -105,3 +107,22 @@ export async function createSavingsGoal(goalData) { return fetchApi('/savings/go
 export async function updateSavingsGoal(id, goalData) { return fetchApi(`/savings/goals/${id}`, { method: 'PUT', body: JSON.stringify(goalData) }); }
 export async function deleteSavingsGoal(id) { return fetchApi(`/savings/goals/${id}`, { method: 'DELETE' }); }
 export async function withdrawFromSavingsGoal(id, withdrawalData) { return fetchApi(`/savings/goals/${id}/withdraw`, { method: 'POST', body: JSON.stringify(withdrawalData) }); }
+
+// BACKUP
+export async function downloadBackup() {
+    const blob = await fetchApi('/backup/create', {}, true);
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `budget_backup_${new Date().toISOString().split('T')[0]}.db`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+}
+
+export async function restoreBackup(file) {
+    const formData = new FormData();
+    formData.append('backupFile', file);
+    return fetchApi('/backup/restore', { method: 'POST', body: formData }, true);
+}

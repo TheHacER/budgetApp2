@@ -53,7 +53,10 @@ async function createFinancialMonthService() {
     AppSettings.get(),
     getHolidays()
   ]);
-  if (!settings || !settings.fiscal_day_start) { throw new Error("Application settings have not been configured."); }
+  // Return null if settings are not yet configured, instead of throwing an error.
+  if (!settings || !settings.fiscal_day_start) { 
+    return null;
+  }
   return new FinancialMonthService(settings, holidays);
 }
 

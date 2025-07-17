@@ -1,8 +1,7 @@
 const SavingsAccount = require('../models/SavingsAccount');
 const SavingsGoal = require('../models/SavingsGoal');
 const Budget = require('../models/Budget');
-const AppSettings = require('../models/AppSettings');
-const Subcategory = require('../models/Subcategory');
+const { createFinancialMonthService } = require('../services/financialMonthService');
 
 class SavingsController {
   static async createSavingsAccount(req, res) {
@@ -80,56 +79,45 @@ class SavingsController {
     if (withdrawalAmount <= 0) {
       return res.status(400).json({ message: 'Withdrawal amount must be a positive number.' });
     }
+    
+    const db = require('../config/database');
+    const database = await db.openDb();
 
     try {
-      const goal = await SavingsGoal.findById(id);
-      if (!goal) {
-        return res.status(404).json({ message: 'Savings goal not found.' });
-      }
-
-      const account = await SavingsAccount.findById(goal.account_id);
-      if (!account) {
-          return res.status(404).json({ message: 'Associated savings account not found.' });
-      }
-
-      if (withdrawalAmount > account.current_balance) {
-          return res.status(400).json({ message: `Withdrawal amount cannot exceed the account balance of ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(account.current_balance)}` });
-      }
-
-      const parentCategory = await Subcategory.findParentCategory(subcategory_id);
-      if (!parentCategory) {
-          return res.status(404).json({ message: 'Parent category not found for the selected subcategory.' });
-      }
-
-      const settings = await AppSettings.get();
-      if (!settings) { throw new Error("App settings not found."); }
-
-      const today = new Date();
-      let year = today.getFullYear();
-      let month = today.getMonth() + 1;
-
-      if (today.getDate() >= settings.fiscal_day_start) {
-        month += 1;
-        if (month > 12) { month = 1; year += 1; }
-      }
-
-      const db = require('../config/database');
-      const database = await db.openDb();
       await database.exec('BEGIN TRANSACTION');
 
-      try {
-        await SavingsAccount.updateBalance(goal.account_id, -withdrawalAmount);
-        await Budget.addToBudget(year, month, parentCategory.category_id, withdrawalAmount);
-
-        await database.exec('COMMIT');
-        res.status(200).json({ message: 'Withdrawal successful. Budget has been updated.' });
-      } catch (innerError) {
-        await database.exec('ROLLBACK');
-        throw innerError;
+      const goal = await SavingsGoal.findById(id, database);
+      if (!goal) { throw new Error('Savings goal not found.'); }
+      
+      if (withdrawalAmount > goal.current_amount) {
+          throw new Error(`Withdrawal amount cannot exceed the goal balance of ${new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(goal.current_amount)}`);
       }
+
+      const financialMonthService = await createFinancialMonthService();
+      const { year, month } = financialMonthService.getCurrentFinancialMonth();
+      
+      const existingBudget = await Budget.getSingleBudget(subcategory_id, year, month, database);
+      
+      const newBudgetAmount = (existingBudget ? existingBudget.amount : 0) + withdrawalAmount;
+      const budgetPayload = {
+          subcategory_id: subcategory_id,
+          year: year,
+          month: month,
+          amount: newBudgetAmount,
+          budget_type: existingBudget ? existingBudget.budget_type : 'allowance'
+      };
+
+      await Budget.bulkSet([budgetPayload], database);
+      await SavingsGoal.updateBalance(id, -withdrawalAmount, database);
+      await SavingsAccount.updateBalance(goal.account_id, -withdrawalAmount, database);
+      
+      await database.exec('COMMIT');
+      res.status(200).json({ message: 'Withdrawal successful. Budget has been updated.' });
+
     } catch (error) {
+      await database.exec('ROLLBACK');
       console.error('Error during withdrawal:', error);
-      res.status(500).json({ message: 'Server error during withdrawal.', error: error.message });
+      res.status(500).json({ message: error.message || 'Server error during withdrawal.' });
     }
   }
 }

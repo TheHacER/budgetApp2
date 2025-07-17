@@ -14,7 +14,7 @@ class SavingsAccount {
     const accounts = await database.all('SELECT * FROM savings_accounts');
     const goals = await database.all('SELECT * FROM savings_goals');
     
-    // Manually join in JavaScript to avoid SQL JSON issues
+    // Manually join in JavaScript to avoid potential SQL JSON issues in some environments
     return accounts.map(acc => ({
       ...acc,
       goals: goals.filter(g => g.account_id === acc.id)
@@ -37,12 +37,13 @@ class SavingsAccount {
 
   static async delete(id) {
     const database = await db.openDb();
+    // This will cascade and delete related goals due to the database schema
     const sql = `DELETE FROM savings_accounts WHERE id = ?`;
     return await database.run(sql, [id]);
   }
 
-  static async updateBalance(id, amount) {
-    const database = await db.openDb();
+  static async updateBalance(id, amount, dbInstance) {
+    const database = dbInstance || await db.openDb();
     const sql = `UPDATE savings_accounts SET current_balance = current_balance + ? WHERE id = ?`;
     await database.run(sql, [amount, id]);
   }

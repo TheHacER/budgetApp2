@@ -29,10 +29,11 @@ class RecurringBillController {
     const { id } = req.params;
     const newBillDetails = req.body;
     try {
-      const oldBillEndDate = new Date().toISOString().split('T')[0];
-
-      await RecurringBill.updateAndSupersede(id, newBillDetails, oldBillEndDate);
-      res.status(200).json({ message: 'Recurring bill updated successfully.' });
+      // The original code was calling a non-existent function "updateAndSupersede".
+      // This has been corrected to call the standard "update" function.
+      await RecurringBill.update(id, newBillDetails);
+      const updatedBill = { id, ...newBillDetails };
+      res.status(200).json(updatedBill);
     } catch (error) {
       console.error('Error updating recurring bill:', error);
       res.status(500).json({ message: 'Server error updating recurring bill.' });

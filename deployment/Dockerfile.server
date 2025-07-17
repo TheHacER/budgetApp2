@@ -1,5 +1,5 @@
 # =================================================================
-#  Dockerfile for the Node.js Backend Server (Cache Busted)
+#  Dockerfile for the Node.js Backend Server
 # =================================================================
 
 # Use an official Node.js runtime as a parent image.
@@ -11,14 +11,19 @@ WORKDIR /usr/src/app
 # Copy package.json and package-lock.json
 COPY server/package*.json ./
 
-# Add a build argument to bust the cache if needed
-ARG CACHE_BUSTER=1
-
 # Install application dependencies
+# This is run as root to ensure global packages can be installed if needed
 RUN npm install
 
 # Copy the rest of the application source code
 COPY ./server .
+
+# Create the data directory and change ownership to the 'node' user.
+# This is the critical fix that allows the app to write/restore the database.
+RUN mkdir -p data/sqlite && chown -R node:node /usr/src/app
+
+# Switch to the non-root 'node' user for better security
+USER node
 
 # Make port 8080 available
 EXPOSE 8080

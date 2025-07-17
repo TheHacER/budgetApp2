@@ -40,19 +40,19 @@ function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader><CardTitle>Income Received</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold text-green-600">{formatCurrency(data.income.total)}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold text-green-600">{formatCurrency(data.summary.totalIncome)}</p></CardContent>
         </Card>
         <Card>
-          <CardHeader><CardTitle>Budgeted Spending</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold text-red-600">{formatCurrency(data.budget.total)}</p></CardContent>
+          <CardHeader><CardTitle>Total Spending</CardTitle></CardHeader>
+          <CardContent><p className="text-2xl font-bold text-red-600">{formatCurrency(data.summary.totalSpending)}</p></CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle>Planned Surplus</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold">{formatCurrency(data.surplus.planned)}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold">{formatCurrency(data.summary.plannedSurplus)}</p></CardContent>
         </Card>
         <Card>
           <CardHeader><CardTitle>Current Surplus</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-bold text-blue-600">{formatCurrency(data.surplus.current)}</p></CardContent>
+          <CardContent><p className="text-2xl font-bold text-blue-600">{formatCurrency(data.summary.currentSurplus)}</p></CardContent>
         </Card>
       </div>
 
@@ -62,7 +62,7 @@ function Dashboard() {
             <CardHeader><CardTitle>Monthly Income Status</CardTitle></CardHeader>
             <CardContent>
                 <ul className="space-y-2">
-                    {data.income.breakdown.map(item => (
+                    {data.incomeStatus.map(item => (
                         <li key={item.id} className="flex items-center justify-between text-sm">
                             <span className="text-muted-foreground">{item.source_name}</span>
                             <div className="flex items-center gap-2">

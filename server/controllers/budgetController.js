@@ -3,6 +3,41 @@ const Transaction = require('../models/Transaction');
 const Subcategory = require('../models/Subcategory');
 const { createFinancialMonthService } = require('../services/financialMonthService');
 const { parse } = require('csv-parse/sync');
+const db = require('../config/database');
+
+
+async function getPreviousMonthSurplus(subcategoryId, year, month) {
+    const dbInstance = await db.openDb();
+    const financialMonthService = await createFinancialMonthService();
+    if (!financialMonthService) return 0;
+
+    const previousMonthDate = new Date(year, month - 2, 1);
+    const prevYear = previousMonthDate.getFullYear();
+    const prevMonth = previousMonthDate.getMonth() + 1;
+    
+    const { startDate, endDate } = financialMonthService.getFinancialMonthRange(prevYear, prevMonth);
+    
+    const prevMonthBudget = await Budget.getSingleBudget(subcategoryId, prevYear, prevMonth, dbInstance);
+    if (!prevMonthBudget || prevMonthBudget.budget_type !== 'rolling') {
+        return 0;
+    }
+
+    const spendingSql = `
+      SELECT COALESCE(SUM(amount), 0) as total
+      FROM (
+        SELECT amount FROM transactions 
+        WHERE subcategory_id = ? AND transaction_date BETWEEN ? AND ? AND is_debit = 1 AND is_split = 0
+        UNION ALL
+        SELECT st.amount FROM split_transactions st
+        JOIN transactions t ON st.transaction_id = t.id
+        WHERE st.subcategory_id = ? AND t.transaction_date BETWEEN ? AND ? AND t.is_debit = 1
+      )
+    `;
+    const result = await dbInstance.get(spendingSql, [subcategoryId, startDate, endDate, subcategoryId, startDate, endDate]);
+    const prevMonthSpending = result.total || 0;
+    
+    return (prevMonthBudget.amount || 0) - prevMonthSpending;
+  }
 
 class BudgetController {
   static async setBudgetsBulk(req, res) {
@@ -23,6 +58,9 @@ class BudgetController {
     const month = parseInt(req.params.month, 10);
     try {
       const financialMonthService = await createFinancialMonthService();
+      if (!financialMonthService) {
+        return res.status(400).json({ message: "Financial month service not available. Check if initial setup is complete."})
+      }
       const { startDate, endDate } = financialMonthService.getFinancialMonthRange(year, month);
 
       const [budgets, spending, recurringBills] = await Promise.all([
@@ -35,7 +73,7 @@ class BudgetController {
       const recurringMap = new Map(recurringBills.map(item => [item.subcategory_id, item.total_recurring]));
 
       const dataWithCarryover = await Promise.all(budgets.map(async (budget) => {
-        const carryover = budget.budget_type === 'rolling' ? await Budget.getPreviousMonthSurplus(budget.subcategory_id, year, month) : 0;
+        const carryover = budget.budget_type === 'rolling' ? await getPreviousMonthSurplus(budget.subcategory_id, year, month) : 0;
         return {
           ...budget,
           actual_spending: spendingMap.get(budget.subcategory_id) || 0,
@@ -57,11 +95,8 @@ class BudgetController {
         let csvString = "subcategory_id,category_name,subcategory_name";
         
         const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth();
-
         for (let i=0; i < 12; i++) {
-            const d = new Date(year, month + i, 1);
+            const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
             csvString += `,${d.toLocaleString('default', { month: 'short' })}-${d.getFullYear()}`;
         }
         csvString += "\n";
@@ -74,6 +109,7 @@ class BudgetController {
         res.setHeader('Content-Disposition', `attachment; filename="budget_template_forward_12m.csv"`);
         res.status(200).send(csvString);
     } catch (error) {
+        console.error('Error generating budget template:', error);
         res.status(500).json({ message: 'Server error generating budget template.' });
     }
   }
@@ -88,24 +124,23 @@ class BudgetController {
         });
 
         const budgetsToSave = [];
-        const today = new Date();
 
         for(const rec of records) {
-            for(let i=0; i < 12; i++) {
-                const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
-                const year = d.getFullYear();
-                const month = d.getMonth() + 1;
-                const monthShort = d.toLocaleString('default', { month: 'short' });
-                const header = `${monthShort}-${year}`;
-                
-                if (rec[header]) {
-                    budgetsToSave.push({
-                        subcategory_id: parseInt(rec.subcategory_id, 10),
-                        year: year,
-                        month: month,
-                        amount: parseFloat(rec[header] || 0),
-                        budget_type: 'allowance' // Default, can be changed in UI
-                    });
+            for (const header in rec) {
+                if (header.includes('-') && rec.subcategory_id) { // e.g., 'Jul-2025'
+                    const [monthStr, yearStr] = header.split('-');
+                    const monthNum = new Date(Date.parse(monthStr +" 1, 2021")).getMonth() + 1;
+                    const yearNum = parseInt(yearStr, 10);
+                    
+                    if (!isNaN(monthNum) && !isNaN(yearNum) && rec[header]) {
+                         budgetsToSave.push({
+                            subcategory_id: parseInt(rec.subcategory_id, 10),
+                            year: yearNum,
+                            month: monthNum,
+                            amount: parseFloat(rec[header] || 0),
+                            budget_type: 'allowance'
+                        });
+                    }
                 }
             }
         }
@@ -117,6 +152,7 @@ class BudgetController {
         await Budget.bulkSet(budgetsToSave);
         res.status(200).json({ message: `Successfully uploaded and saved ${budgetsToSave.length} budget entries.` });
     } catch (error) {
+        console.error('Error processing budget CSV:', error);
         res.status(500).json({ message: `Error processing CSV file: ${error.message}` });
     }
   }
