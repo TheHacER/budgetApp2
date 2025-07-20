@@ -1,2 +1,24 @@
-*.tar.gz
+# Dependencies
+/node_modules
+/client/node_modules
+/server/node_modules
+
+# Build output
+/build
+/client/build
+
+# OS-specific
+.DS_Store
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+
+# Ignore Backups
 *.tar
+*.tar.gz
