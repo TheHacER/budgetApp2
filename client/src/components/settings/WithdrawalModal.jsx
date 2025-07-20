@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import * as api from '../../services/api';
-import { Button } from '../ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogClose } from '../ui/dialog';
-import { Input } from '../ui/input';
-import { Label } from '../ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  DialogContentText,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel
+} from '@mui/material';
 
 function WithdrawalModal({ goal, onSave, onClose }) {
   const [allSubcategories, setAllSubcategories] = useState([]);
@@ -31,40 +39,36 @@ function WithdrawalModal({ goal, onSave, onClose }) {
   if (!goal) return null;
 
   return (
-    <Dialog open={!!goal} onOpenChange={onClose}>
+    <Dialog open={!!goal} onClose={onClose}>
+      <DialogTitle>Withdraw from "{goal.title}"</DialogTitle>
+      <form onSubmit={handleSubmit}>
         <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Withdraw from "{goal.title}"</DialogTitle>
-                <DialogDescription>
-                    Transfer funds from your savings goal to a spending category. This will increase the budget for that category for the current month.
-                </DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4 py-4">
-                <div>
-                    <Label htmlFor="amount">Amount to Withdraw (£)</Label>
-                    <Input id="amount" name="amount" type="number" step="0.01" required />
-                </div>
-                <div>
-                    <Label htmlFor="subcategory_id">Spending Category</Label>
-                    {/* CORRECTED: The field name is now subcategory_id */}
-                    <Select name="subcategory_id" required>
-                        <SelectTrigger>
-                            <SelectValue placeholder="Select a category..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {allSubcategories.map(s => (
-                                // CORRECTED: The > character is now properly escaped
-                                <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} &gt; {s.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-                <DialogFooter>
-                    <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
-                    <Button type="submit">Confirm Withdrawal</Button>
-                </DialogFooter>
-            </form>
+          <DialogContentText sx={{mb: 2}}>
+            Transfer funds from your savings goal to a spending category. This will increase the budget for that category for the current month.
+          </DialogContentText>
+          <TextField
+            name="amount"
+            label="Amount to Withdraw (£)"
+            type="number"
+            inputProps={{ step: "0.01" }}
+            required
+            fullWidth
+            margin="normal"
+          />
+          <FormControl fullWidth margin="normal">
+            <InputLabel id="category-withdraw-label">Spending Category</InputLabel>
+            <Select labelId="category-withdraw-label" name="subcategory_id" required>
+              {allSubcategories.map(s => (
+                <MenuItem key={s.id} value={s.id.toString()}>{s.category_name} &gt; {s.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </DialogContent>
+        <DialogActions sx={{ p: '0 24px 24px' }}>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="contained">Confirm Withdrawal</Button>
+        </DialogActions>
+      </form>
     </Dialog>
   );
 }

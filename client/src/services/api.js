@@ -1,10 +1,11 @@
+// client/src/services/api.js
 const API_BASE_URL = '/api';
 
 async function fetchApi(url, options = {}, isFile = false) {
   const token = localStorage.getItem('authToken');
   const headers = isFile ? {} : { 'Content-Type': 'application/json' };
   if (token) { headers['Authorization'] = `Bearer ${token}`; }
-  
+
   if (options.token) {
     headers['Authorization'] = `Bearer ${options.token}`;
   }
@@ -13,21 +14,21 @@ async function fetchApi(url, options = {}, isFile = false) {
   delete finalOptions.token;
 
   const response = await fetch(`${API_BASE_URL}${url}`, finalOptions);
-  
+
   if (response.status === 204) return;
 
   const contentType = response.headers.get("content-type");
-  
+
   if (contentType && contentType.includes("application/json")) {
-      const data = await response.json();
-      if (!response.ok) { throw new Error(data.message || 'An API error occurred.'); }
-      return data;
+    const data = await response.json();
+    if (!response.ok) { throw new Error(data.message || 'An API error occurred.'); }
+    return data;
   }
-  
+
   if (response.ok && (contentType?.includes('application/x-sqlite3') || contentType?.includes('text/csv'))) {
-      return await response.blob();
+    return await response.blob();
   }
-  
+
   if (response.ok) {
     return response.text();
   }
@@ -51,14 +52,15 @@ export async function deleteImportProfile(id) { return fetchApi(`/import-profile
 
 
 // TRANSACTIONS
-export async function uploadTransactionsFile(file, profileId) { 
-    const formData = new FormData(); 
-    formData.append('transactionsFile', file);
-    formData.append('profileId', profileId);
-    return fetchApi('/transactions/upload', { method: 'POST', body: formData }, true); 
+export async function uploadTransactionsFile(file, profileId) {
+  const formData = new FormData();
+  formData.append('transactionsFile', file);
+  formData.append('profileId', profileId);
+  return fetchApi('/transactions/upload', { method: 'POST', body: formData }, true);
 }
 export async function getAllTransactions() { return fetchApi('/transactions'); }
 export async function categorizeTransaction(transactionId, data) { return fetchApi(`/transactions/${transactionId}/categorize`, { method: 'PUT', body: JSON.stringify(data) }); }
+export async function updateTransactionVendor(transactionId, vendorId) { return fetchApi(`/transactions/${transactionId}/vendor`, { method: 'PUT', body: JSON.stringify({ vendor_id: vendorId }) }); }
 export async function splitTransaction(transactionId, data) { return fetchApi(`/transactions/${transactionId}/split`, { method: 'POST', body: JSON.stringify({ splits: data.splits, vendor_id: data.vendor_id }) }); }
 export async function getIgnoredTransactions() { return fetchApi('/transactions/ignored'); }
 export async function reinstateTransaction(id) { return fetchApi(`/transactions/ignored/${id}/reinstate`, { method: 'POST', }); }
@@ -110,19 +112,19 @@ export async function withdrawFromSavingsGoal(id, withdrawalData) { return fetch
 
 // BACKUP
 export async function downloadBackup() {
-    const blob = await fetchApi('/backup/create', {}, true);
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `budget_backup_${new Date().toISOString().split('T')[0]}.db`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+  const blob = await fetchApi('/backup/create', {}, true);
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `budget_backup_${new Date().toISOString().split('T')[0]}.db`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
 }
 
 export async function restoreBackup(file) {
-    const formData = new FormData();
-    formData.append('backupFile', file);
-    return fetchApi('/backup/restore', { method: 'POST', body: formData }, true);
+  const formData = new FormData();
+  formData.append('backupFile', file);
+  return fetchApi('/backup/restore', { method: 'POST', body: formData }, true);
 }

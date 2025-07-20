@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import LoginPage from './pages/LoginPage';
@@ -9,32 +9,34 @@ import SavingsPage from './pages/SavingsPage';
 import SettingsPage from './pages/SettingsPage';
 import InitialSetupPage from './pages/InitialSetupPage';
 import Navbar from './components/layout/Navbar';
-import { Button } from './components/ui/button';
+import { Box, CircularProgress, Button } from '@mui/material';
 
-const AppLayout = () => ( <div><Navbar /><main><Outlet /></main></div> );
-
-const LoadingScreen = ({ message }) => (
-  <div className="flex items-center justify-center h-screen bg-background">
-    <p className="text-muted-foreground">{message}</p>
+const AppLayout = () => (
+  <div>
+    <Navbar />
+    <main>
+      <Outlet />
+    </main>
   </div>
 );
 
+const LoadingScreen = ({ message }) => (
+  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+    <CircularProgress />
+    <p style={{ marginLeft: '1rem' }}>{message}</p>
+  </Box>
+);
+
 const ErrorScreen = ({ error, onRetry }) => (
-  <div className="flex flex-col items-center justify-center h-screen bg-background gap-4">
-      <h2 className="text-xl font-semibold text-destructive">Application Error</h2>
-      <p className="text-muted-foreground max-w-md text-center">{error}</p>
-      <Button onClick={onRetry}>Retry Connection</Button>
-  </div>
+  <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', gap: 2 }}>
+    <h2 style={{ color: 'red' }}>Application Error</h2>
+    <p>{error}</p>
+    <Button onClick={onRetry} variant="contained">Retry Connection</Button>
+  </Box>
 );
 
 function App() {
   const { isAuthenticated, appSettings, isLoading, initError, initializeApp } = useAuth();
-
-  // --- DIAGNOSTIC STEP ---
-  // This will print the settings object to the browser console when it changes.
-  useEffect(() => {
-    console.log("Auth context has updated. Received settings:", appSettings);
-  }, [appSettings]);
 
   if (isLoading) {
     return <LoadingScreen message="Loading..." />;
@@ -44,7 +46,6 @@ function App() {
     return <ErrorScreen error={initError} onRetry={initializeApp} />;
   }
 
-  // If setup is NOT complete, always force the user to the setup page.
   if (appSettings && !appSettings.setup_complete) {
     return (
       <Routes>
@@ -54,7 +55,6 @@ function App() {
     );
   }
 
-  // If setup IS complete, use the normal authentication flow.
   return (
     <Routes>
       {isAuthenticated ? (

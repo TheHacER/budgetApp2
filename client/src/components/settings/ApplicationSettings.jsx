@@ -1,9 +1,8 @@
 import React, { useState, useRef } from 'react';
 import * as api from '../../services/api';
-import { Button } from '../ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../ui/card';
+import { Button, Card, CardHeader, CardContent, Typography, Box } from '@mui/material';
 import ImportProfileManager from './ImportProfileManager';
-import { Download, Upload, RotateCw } from 'lucide-react';
+import { Download, Upload, Refresh } from '@mui/icons-material';
 
 function ApplicationSettings() {
   const [message, setMessage] = useState('');
@@ -40,11 +39,15 @@ function ApplicationSettings() {
       setIsBackingUp(false);
     }
   };
-  
+
   const handleRestore = async (event) => {
     const file = event.target.files[0];
     if (!file) {
       return;
+    }
+
+    if (!window.confirm('Are you sure you want to restore from this backup? This will overwrite all current data.')) {
+        return;
     }
 
     setIsRestoring(true);
@@ -58,58 +61,65 @@ function ApplicationSettings() {
     } catch (err) {
       setError(`Error restoring from backup: ${err.message}`);
       setIsRestoring(false);
-    } 
+    }
   };
-  
+
   const triggerFileInput = () => {
     fileInputRef.current.click();
   };
 
   return (
-    <div className="space-y-6">
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       <Card>
-        <CardHeader>
-          <CardTitle>Data Management</CardTitle>
-          <CardDescription>Manage application-wide data sources and tools.</CardDescription>
-        </CardHeader>
+        <CardHeader
+          title="Data Management"
+          subheader="Manage application-wide data sources and tools."
+        />
         <CardContent>
-          <div className="flex items-center justify-between p-4 border rounded-lg mb-4">
-            <p className="text-sm font-medium">Public Holidays</p>
-            <Button onClick={handleRefresh} disabled={isRefreshing} variant="outline">
-              {isRefreshing ? <><RotateCw className="mr-2 h-4 w-4 animate-spin" /> Refreshing...</> : 'Refresh from GOV.UK'}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, border: '1px solid #eee', borderRadius: 1, mb: 2 }}>
+            <Typography>Public Holidays</Typography>
+            <Button onClick={handleRefresh} disabled={isRefreshing} variant="outlined" startIcon={isRefreshing ? <Refresh /> : null}>
+              {isRefreshing ? 'Refreshing...' : 'Refresh from GOV.UK'}
             </Button>
-          </div>
-        </CardContent>
-        {(message && !error) && (
-          <CardFooter>
-            <p className="text-sm text-green-600">{message}</p>
-          </CardFooter>
-        )}
-        {error && (
-            <CardFooter>
-                <p className="text-sm text-red-600">{error}</p>
-            </CardFooter>
-        )}
-      </Card>
-
-      <ImportProfileManager />
-
-      <Card className="border-blue-500">
-        <CardHeader>
-          <CardTitle>Backup & Restore</CardTitle>
-          <CardDescription>Download a full backup of your database or restore from a previous backup file.</CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center gap-4">
-            <Button onClick={handleBackup} disabled={isBackingUp}>
-                {isBackingUp ? 'Generating...' : <> <Download className="mr-2 h-4 w-4" /> Download Full Backup</>}
-            </Button>
-            <input type="file" ref={fileInputRef} onChange={handleRestore} style={{ display: 'none' }} accept=".db" />
-            <Button onClick={triggerFileInput} variant="outline" disabled={isRestoring}>
-                {isRestoring ? 'Restoring...' : <><Upload className="mr-2 h-4 w-4" /> Restore from Backup</>}
-            </Button>
+          </Box>
+           {(message && !error) && (
+            <Typography color="success.main" sx={{mt: 2}}>{message}</Typography>
+           )}
+           {error && (
+            <Typography color="error" sx={{mt: 2}}>{error}</Typography>
+           )}
         </CardContent>
       </Card>
-    </div>
+
+      <Card>
+        <CardHeader
+            title="Transaction Import Profiles"
+            subheader="Manage profiles for importing CSV statements from different banks."
+        />
+        <CardContent>
+            <ImportProfileManager />
+        </CardContent>
+      </Card>
+
+
+      <Card>
+        <CardHeader
+          title="Backup & Restore"
+          subheader="Download a full backup of your database or restore from a previous backup file."
+        />
+        <CardContent>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+                <Button onClick={handleBackup} disabled={isBackingUp} variant="contained" startIcon={<Download />}>
+                    {isBackingUp ? 'Generating...' : 'Download Full Backup'}
+                </Button>
+                <input type="file" ref={fileInputRef} onChange={handleRestore} style={{ display: 'none' }} accept=".db" />
+                <Button onClick={triggerFileInput} variant="outlined" disabled={isRestoring} startIcon={<Upload />}>
+                    {isRestoring ? 'Restoring...' : 'Restore from Backup'}
+                </Button>
+            </Box>
+        </CardContent>
+      </Card>
+    </Box>
   );
 }
 

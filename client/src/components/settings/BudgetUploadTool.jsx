@@ -1,9 +1,7 @@
 import React, { useState, useRef } from 'react';
 import * as api from '../../services/api';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../ui/card';
-import { Download, Upload } from 'lucide-react';
+import { Button, Card, CardHeader, CardContent, CardActions, Typography, Box } from '@mui/material';
+import { Download, Upload } from '@mui/icons-material';
 
 function BudgetUploadTool() {
   const [message, setMessage] = useState('');
@@ -52,36 +50,32 @@ function BudgetUploadTool() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Budget Upload Tool</CardTitle>
-        <CardDescription>
-          Download a CSV template of your categories, fill it out, and upload it to set your budgets for the year.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-center justify-between p-4 border rounded-lg">
-          <p className="font-medium">1. Download Template</p>
-          <Button onClick={handleDownload} variant="outline">
-            <Download className="h-4 w-4 mr-2" />
+      <CardHeader
+        title="Budget Upload Tool"
+        subheader="Download a CSV template, fill it out, and upload it to set your budgets for the year."
+      />
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, border: '1px solid #eee', borderRadius: 1, mb: 2 }}>
+          <Typography>1. Download Template</Typography>
+          <Button onClick={handleDownload} variant="outlined" startIcon={<Download />}>
             Download
           </Button>
-        </div>
-        <div className="flex items-center justify-between p-4 border rounded-lg">
-          <div className="flex-grow">
-            <p className="font-medium">2. Upload Completed File</p>
-            <Input type="file" ref={fileInputRef} accept=".csv" className="mt-2" />
-          </div>
-          <Button onClick={handleUpload} disabled={isLoading} className="ml-4">
-            <Upload className="h-4 w-4 mr-2" />
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, border: '1px solid #eee', borderRadius: 1 }}>
+          <Box>
+            <Typography>2. Upload Completed File</Typography>
+            <input type="file" ref={fileInputRef} accept=".csv" style={{ marginTop: '1rem' }} />
+          </Box>
+          <Button onClick={handleUpload} disabled={isLoading} variant="contained" startIcon={<Upload />}>
             {isLoading ? "Uploading..." : "Upload"}
           </Button>
-        </div>
+        </Box>
       </CardContent>
       {(message || error) && (
-        <CardFooter>
-          {message && <p className="text-sm text-green-600">{message}</p>}
-          {error && <p className="text-sm text-red-600">{error}</p>}
-        </CardFooter>
+        <CardActions sx={{px: 2, pb: 2}}>
+          {message && <Typography color="success.main">{message}</Typography>}
+          {error && <Typography color="error">{error}</Typography>}
+        </CardActions>
       )}
     </Card>
   );

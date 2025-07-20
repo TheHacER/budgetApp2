@@ -1,10 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import * as api from '../services/api';
-import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from './ui/dialog';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Select, MenuItem, FormControl, InputLabel, Box, Typography } from '@mui/material';
 
 function CategorizationModal({ transaction, allSubcategories, allVendors, onClose, onSave }) {
   const [selectedSubcategory, setSelectedSubcategory] = useState('');
@@ -29,11 +25,11 @@ function CategorizationModal({ transaction, allSubcategories, allVendors, onClos
         const newVendor = await api.createVendor({ name: newVendorName.toLowerCase().replace(/\s/g, ''), displayName: newVendorName });
         vendorIdToSave = newVendor.id.toString();
       }
-      
+
       const payload = {
-          subcategory_id: (transactionType === 'transfer' || transactionType === 'income') ? null : (selectedSubcategory || null),
-          transaction_type: transactionType,
-          vendor_id: (transactionType === 'transfer' || transactionType === 'income') ? null : (vendorIdToSave || null)
+        subcategory_id: (transactionType === 'transfer' || transactionType === 'income') ? null : (selectedSubcategory || null),
+        transaction_type: transactionType,
+        vendor_id: (transactionType === 'transfer' || transactionType === 'income') ? null : (vendorIdToSave || null)
       };
 
       await api.categorizeTransaction(transaction.id, payload);
@@ -48,53 +44,67 @@ function CategorizationModal({ transaction, allSubcategories, allVendors, onClos
 
   const formatCurrency = (value) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value || 0);
 
-  // Determine if vendor/category should be shown
   const showVendor = transactionType === 'expense' || transactionType === 'refund';
   const showCategory = transactionType === 'expense' || transactionType === 'refund';
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[525px]">
-        <DialogHeader><DialogTitle>Categorize Transaction</DialogTitle></DialogHeader>
+    <Dialog open={isOpen} onClose={onClose} fullWidth maxWidth="sm">
+      <DialogTitle>Categorize Transaction</DialogTitle>
+      <DialogContent>
         {transaction && (
-          <div className="py-4 space-y-4">
-            <div className="bg-muted p-3 rounded-md text-sm">
-              <div className="flex justify-between"><span>Date:</span> <strong>{new Date(transaction.transaction_date).toLocaleDateString("en-GB")}</strong></div>
-              <div className="flex justify-between"><span>Description:</span> <strong>{transaction.description_original}</strong></div>
-              <div className="flex justify-between"><span>Amount:</span> <strong className={transaction.is_debit ? 'text-destructive' : 'text-green-600'}>{formatCurrency(transaction.amount)}</strong></div>
-            </div>
+          <Box sx={{ pt: 1 }}>
+            <Box sx={{ mb: 2, p: 2, border: '1px solid #eee', borderRadius: 1 }}>
+              <Typography>Date: <strong>{new Date(transaction.transaction_date).toLocaleDateString("en-GB")}</strong></Typography>
+              <Typography>Description: <strong>{transaction.description_original}</strong></Typography>
+              <Typography>Amount: <strong style={{ color: transaction.is_debit ? 'inherit' : 'green' }}>{formatCurrency(transaction.amount)}</strong></Typography>
+            </Box>
             {!transaction.is_debit && (
-              <div className="grid gap-2">
-                <Label>Transaction Type</Label>
-                <Select value={transactionType} onValueChange={setTransactionType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="income">Income</SelectItem>
-                        <SelectItem value="refund">Refund</SelectItem>
-                        <SelectItem value="transfer">Transfer</SelectItem>
-                    </SelectContent>
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="transaction-type-label">Transaction Type</InputLabel>
+                <Select labelId="transaction-type-label" value={transactionType} onChange={(e) => setTransactionType(e.target.value)}>
+                  <MenuItem value="income">Income</MenuItem>
+                  <MenuItem value="refund">Refund</MenuItem>
+                  <MenuItem value="transfer">Transfer</MenuItem>
                 </Select>
-              </div>
+              </FormControl>
             )}
             {showVendor && (
-              <div className="grid gap-2">
-                <Label>Vendor</Label>
-                <Select onValueChange={setSelectedVendor} value={selectedVendor}><SelectTrigger><SelectValue placeholder="-- Select Vendor --" /></SelectTrigger><SelectContent>{allVendors.map(v => <SelectItem key={v.id} value={v.id.toString()}>{v.display_name}</SelectItem>)}<SelectItem value="new">-- Create New Vendor --</SelectItem></SelectContent></Select>
-                {selectedVendor === 'new' && ( <Input placeholder="New Vendor Name" value={newVendorName} onChange={(e) => setNewVendorName(e.target.value)} className="mt-2" /> )}
-              </div>
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="vendor-label">Vendor</InputLabel>
+                <Select labelId="vendor-label" value={selectedVendor} onChange={(e) => setSelectedVendor(e.target.value)}>
+                  {allVendors.map(v => <MenuItem key={v.id} value={v.id.toString()}>{v.display_name}</MenuItem>)}
+                  <MenuItem value="new">-- Create New Vendor --</MenuItem>
+                </Select>
+                {selectedVendor === 'new' && (
+                  <TextField
+                    label="New Vendor Name"
+                    value={newVendorName}
+                    onChange={(e) => setNewVendorName(e.target.value)}
+                    fullWidth
+                    margin="normal"
+                  />
+                )}
+              </FormControl>
             )}
             {showCategory && (
-              <div className="grid gap-2">
-                <Label>Category</Label>
-                 <Select onValueChange={setSelectedSubcategory} value={selectedSubcategory}><SelectTrigger><SelectValue placeholder="-- Select Category --" /></SelectTrigger><SelectContent>{allSubcategories.map(s => <SelectItem key={s.id} value={s.id.toString()}>{s.category_name} &gt; {s.name}</SelectItem>)}</SelectContent></Select>
-              </div>
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="category-label">Category</InputLabel>
+                <Select labelId="category-label" value={selectedSubcategory} onChange={(e) => setSelectedSubcategory(e.target.value)}>
+                  {allSubcategories.map(s => (
+                    <MenuItem key={s.id} value={s.id.toString()}>{s.category_name} &gt; {s.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             )}
-            
-          </div>
+          </Box>
         )}
-        <DialogFooter><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={handleSave}>Save Changes</Button></DialogFooter>
       </DialogContent>
+      <DialogActions sx={{ p: '0 24px 24px' }}>
+        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={handleSave} variant="contained">Save Changes</Button>
+      </DialogActions>
     </Dialog>
   );
 }
+
 export default CategorizationModal;

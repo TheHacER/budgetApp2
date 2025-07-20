@@ -1,10 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import * as api from '../../services/api';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
-import { Button, buttonVariants } from '../ui/button';
-import { Input } from '../ui/input';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '../ui/alert-dialog';
-import { Trash2 } from 'lucide-react';
+import {
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Button,
+  TextField,
+  IconButton,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Typography,
+  Box
+} from '@mui/material';
+import { ExpandMore, Delete } from '@mui/icons-material';
 
 function CategoryManager() {
   const [categories, setCategories] = useState([]);
@@ -47,87 +57,87 @@ function CategoryManager() {
   };
 
   const handleDeleteCategory = async (categoryId) => {
-    try {
-      await api.deleteCategory(categoryId);
-      fetchCategories();
-    } catch (err) { alert(`Error: ${err.message}`); }
+    if (window.confirm('Are you sure you want to delete this category and all its subcategories?')) {
+        try {
+            await api.deleteCategory(categoryId);
+            fetchCategories();
+          } catch (err) { alert(`Error: ${err.message}`); }
+    }
   };
 
   const handleDeleteSubcategory = async (categoryId, subcategoryId) => {
-    try {
-      await api.deleteSubcategory(categoryId, subcategoryId);
-      fetchCategories();
-    } catch (err) { alert(`Error: ${err.message}`); }
+    if(window.confirm('Are you sure you want to delete this subcategory?')) {
+        try {
+            await api.deleteSubcategory(categoryId, subcategoryId);
+            fetchCategories();
+          } catch (err) { alert(`Error: ${err.message}`); }
+    }
   };
 
   const handleSubcategoryNameChange = (categoryId, value) => {
-    setNewSubcategoryNames(prev => ({...prev, [categoryId]: value}));
+    setNewSubcategoryNames(prev => ({ ...prev, [categoryId]: value }));
   };
 
   if (loading) return <p>Loading categories...</p>;
-  if (error) return <p className="text-red-500">Error: {error}</p>;
+  if (error) return <Typography color="error">Error: {error}</Typography>;
 
   return (
-    <div className="space-y-6">
-      <form onSubmit={handleCreateCategory} className="flex items-center gap-2 p-4 border rounded-lg">
-        <Input
-          placeholder="New Category Name"
+    <Box>
+      <form onSubmit={handleCreateCategory} style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+        <TextField
+          label="New Category Name"
           value={newCategoryName}
           onChange={(e) => setNewCategoryName(e.target.value)}
-          className="flex-grow"
+          fullWidth
+          size="small"
         />
-        <Button type="submit">Add Category</Button>
+        <Button type="submit" variant="contained">Add Category</Button>
       </form>
-
-      <Accordion type="single" collapsible className="w-full">
+      <Box>
         {categories.map(category => (
-          <AccordionItem value={`category-${category.id}`} key={category.id}>
-            <div className="flex items-center justify-between">
-              <AccordionTrigger className="flex-grow">
-                <span className="font-semibold">{category.name}</span>
-              </AccordionTrigger>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                   <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-red-500" /></Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                    <AlertDialogHeader><AlertDialogTitle>Delete "{category.name}"?</AlertDialogTitle><AlertDialogDescription>This will delete the main category and ALL its subcategories. This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                    <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDeleteCategory(category.id)} className={buttonVariants({ variant: "destructive" })}>Delete</AlertDialogAction></AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-            <AccordionContent>
-              <div className="pl-4 space-y-4">
-                <ul className="pl-6 space-y-2">
+          <Accordion key={category.id} defaultExpanded>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                <Typography>{category.name}</Typography>
+                <IconButton onClick={(e) => { e.stopPropagation(); handleDeleteCategory(category.id);}}>
+                  <Delete />
+                </IconButton>
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Box>
+                <List dense>
                   {category.subcategories && category.subcategories.length > 0 ? (
                     category.subcategories.map(sub => (
-                      <li key={sub.id} className="flex items-center justify-between text-muted-foreground">
-                        <span>- {sub.name}</span>
-                        <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon"><Trash2 className="h-4 w-4 text-gray-400 hover:text-red-500" /></Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                                <AlertDialogHeader><AlertDialogTitle>Delete "{sub.name}"?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone.</AlertDialogDescription></AlertDialogHeader>
-                                <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleDeleteSubcategory(category.id, sub.id)} className={buttonVariants({ variant: "destructive" })}>Delete</AlertDialogAction></AlertDialogFooter>
-                            </AlertDialogContent>
-                        </AlertDialog>
-                      </li>
+                      <ListItem key={sub.id}>
+                        <ListItemText primary={sub.name} />
+                        <ListItemSecondaryAction>
+                          <IconButton edge="end" onClick={() => handleDeleteSubcategory(category.id, sub.id)}>
+                            <Delete />
+                          </IconButton>
+                        </ListItemSecondaryAction>
+                      </ListItem>
                     ))
                   ) : (
-                    <p className="text-muted-foreground text-sm">No subcategories yet.</p>
+                    <Typography color="textSecondary" sx={{ml: 2}}>No subcategories yet.</Typography>
                   )}
-                </ul>
-                <form onSubmit={(e) => handleCreateSubcategory(e, category.id)} className="flex items-center gap-2 pt-2 border-t">
-                   <Input placeholder="New Subcategory Name" value={newSubcategoryNames[category.id] || ''} onChange={(e) => handleSubcategoryNameChange(category.id, e.target.value)} className="flex-grow"/>
-                   <Button type="submit" variant="secondary">Add Subcategory</Button>
+                </List>
+                <form onSubmit={(e) => handleCreateSubcategory(e, category.id)} style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                  <TextField
+                    label="New Subcategory Name"
+                    value={newSubcategoryNames[category.id] || ''}
+                    onChange={(e) => handleSubcategoryNameChange(category.id, e.target.value)}
+                    fullWidth
+                    size="small"
+                  />
+                  <Button type="submit" variant="outlined">Add Subcategory</Button>
                 </form>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
+              </Box>
+            </AccordionDetails>
+          </Accordion>
         ))}
-      </Accordion>
-    </div>
+      </Box>
+    </Box>
   );
 }
 

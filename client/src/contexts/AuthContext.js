@@ -1,73 +1,76 @@
-import React, { createContext, useState, useContext, useCallback, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import * as api from '../services/api';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import * as api from '../services/api'; // Corrected path
 
 const AuthContext = createContext(null);
 
-export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem('authToken'));
-  const [appSettings, setAppSettings] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [initError, setInitError] = useState(null);
-  const navigate = useNavigate();
+export const AuthProvider = ({ children }) => {
+    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [appSettings, setAppSettings] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [initError, setInitError] = useState('');
+    
+    const initializeApp = useCallback(async () => {
+        setIsLoading(true);
+        setInitError('');
+        const token = localStorage.getItem('authToken');
+        if (token) {
+            try {
+                const settings = await api.getAppSettings();
+                setAppSettings(settings);
+                setIsAuthenticated(true);
+            } catch (error) {
+                console.error("Initialization error:", error);
+                localStorage.removeItem('authToken');
+                setIsAuthenticated(false);
+                setInitError("Could not connect to the server. Please ensure the backend is running and refresh.");
+            }
+        } else {
+            // Check for initial setup status even if not logged in
+             try {
+                const settings = await api.getAppSettings();
+                setAppSettings(settings);
+            } catch (error) {
+                 setInitError("Could not connect to the server for initial check. Is the backend running?");
+            }
+        }
+        setIsLoading(false);
+    }, []);
 
-  const initializeApp = useCallback(async () => {
-    setIsLoading(true);
-    setInitError(null);
-    try {
-      const settings = await api.getAppSettings();
-      setAppSettings(settings);
-    } catch (error) {
-      console.error("Initialization Error:", error);
-      setInitError(error.message || 'Failed to connect to the server. Please ensure it is running and try again.');
-      setAppSettings(null);
-      setToken(null);
-      localStorage.removeItem('authToken');
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    useEffect(() => {
+        initializeApp();
+    }, [initializeApp]);
 
-  useEffect(() => {
-    initializeApp();
-  }, [initializeApp]);
+    const login = async (email, password) => {
+        try {
+            const data = await api.login(email, password);
+            localStorage.setItem('authToken', data.token);
+            await initializeApp(); // Re-initialize to fetch settings
+            return true;
+        } catch (error) {
+            console.error("Login failed:", error);
+            throw error;
+        }
+    };
 
-  const login = async (email, password) => {
-    const data = await api.login(email, password);
-    if (data && data.token) {
-      localStorage.setItem('authToken', data.token);
-      setToken(data.token);
-      await initializeApp(); // Re-fetch settings after a successful login
-    } else {
-      throw new Error('Login failed. Please check your credentials.');
-    }
-  };
+    const logout = () => {
+        localStorage.removeItem('authToken');
+        setIsAuthenticated(false);
+        setAppSettings(null);
+    };
 
-  const logout = () => {
-    setToken(null);
-    localStorage.removeItem('authToken');
-    setAppSettings(null);
-    navigate('/login');
-  };
+    const value = {
+        isAuthenticated,
+        appSettings,
+        isLoading,
+        initError,
+        login,
+        logout,
+        initializeApp,
+    };
 
-  const value = {
-    token,
-    login,
-    logout,
-    isAuthenticated: !!token,
-    appSettings,
-    isLoading,
-    initError,
-    initializeApp
-  };
+    return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
 
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
-export function useAuth() {
-  return useContext(AuthContext);
-}
+export const useAuth = () => {
+    return useContext(AuthContext);
+};
