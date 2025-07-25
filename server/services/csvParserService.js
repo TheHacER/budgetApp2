@@ -57,36 +57,32 @@ class CsvParserService {
       throw new Error('Import profile not found.');
     }
 
-    const records = parse(fileBuffer, {
-      // This is the fix: dynamically handle columns instead of a fixed header.
-      columns: false,
-      skip_empty_lines: true,
-      trim: true,
-      // This allows for rows with a different number of columns.
-      relax_column_count: true, 
-      // Skip lines at the top of the file that are not data
-      from_line: 5 
-    });
+  const records = parse(fileBuffer, {
+    // Dynamically map the header row so we can access values by column name
+    columns: header => header.map(h => h.trim()),
+    skip_empty_lines: true,
+    trim: true,
+    // This allows for rows with a different number of columns.
+    relax_column_count: true,
+    // Skip lines at the top of the file that are not data
+    from_line: 5
+  });
 
     const results = [];
     
-    // Find column indexes based on the profile
-    const dateIndex = 0; // 'Date' is the first column
-    const descriptionIndex = 2; // 'Description' is the third column
-    const debitIndex = 3; // 'Paid out' is the fourth column
-    const creditIndex = 4; // 'Paid in' is the fifth column
+  for (const row of records) {
+    const date = normalizeDate(row[profile.date_col], profile.date_format);
+    if (!date) continue; // Skip rows with invalid dates
 
-    for (const row of records) {
-      const date = normalizeDate(row[dateIndex], profile.date_format);
-      if (!date) continue; // Skip rows with invalid dates
-
-      const description = row[descriptionIndex] || 'N/A';
-      let amount = 0;
-
-      // Logic for separate debit/credit columns
-      const debit = cleanAndParseFloat(row[debitIndex]);
-      const credit = cleanAndParseFloat(row[creditIndex]);
+    const description = row[profile.description_col] || 'N/A';
+    let amount = 0;
+    if (profile.amount_col && row[profile.amount_col]) {
+      amount = cleanAndParseFloat(row[profile.amount_col]);
+    } else if (profile.debit_col && profile.credit_col) {
+      const debit = cleanAndParseFloat(row[profile.debit_col]);
+      const credit = cleanAndParseFloat(row[profile.credit_col]);
       amount = credit - debit;
+    }
       
       if (Math.abs(amount) < 0.01) continue; // Skip zero-amount transactions
 
