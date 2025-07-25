@@ -65,4 +65,4 @@ async function migrate(db) {
   `;
   await db.exec(schema);
 }
-module.exports = { openDb, migrate, closeDb }; // Export the new function
+module.exports = { openDb, migrate, closeDb }; // Export the database helper functions
