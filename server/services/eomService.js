@@ -55,7 +55,7 @@ class EomService {
             let activeGoals = allAccounts.flatMap(acc => acc.goals).filter(g => g.is_active);
 
             const currentDate = new Date();
-            const priorityOrder = { "High": 1, "Medium": 2, "Low": 3 };
+            const priorityOrder = { high: 1, medium: 2, low: 3 };
 
             activeGoals = activeGoals.map(goal => {
                 const targetDate = new Date(goal.target_date);
