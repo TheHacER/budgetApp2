@@ -157,11 +157,13 @@ class BudgetController {
                 // Process budget entries for the row
                 for (const header in rec) {
                     if (header.toLowerCase() !== 'category' && header.toLowerCase() !== 'subcategory') {
-                        const dateParts = header.match(/([a-zA-Z]+)\s*(\d+)/);
+                        const dateParts = header.match(/([a-zA-Z]+)[\s-]*(\d{2,4})/);
                         if (dateParts && dateParts.length === 3) {
                             const monthStr = dateParts[1];
-                            const yearShort = parseInt(dateParts[2], 10);
-                            const yearNum = 2000 + yearShort;
+                            let yearNum = parseInt(dateParts[2], 10);
+                            if (yearNum < 100) {
+                                yearNum += 2000;
+                            }
                             const monthNum = new Date(Date.parse(monthStr + " 1, 2000")).getMonth() + 1;
 
                             const amount = parseFloat(rec[header] || 0);
