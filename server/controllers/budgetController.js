@@ -157,7 +157,8 @@ class BudgetController {
                 // Process budget entries for the row
                 for (const header in rec) {
                     if (header.toLowerCase() !== 'category' && header.toLowerCase() !== 'subcategory') {
-                        const dateParts = header.match(/([a-zA-Z]+)[\s-]*(\d{2,4})/);
+                        // Allow either "Jul 25" or "Jul-25" style headers
+                        const dateParts = header.match(/([a-zA-Z]+)[-\s]*(\d+)/);
                         if (dateParts && dateParts.length === 3) {
                             const monthStr = dateParts[1];
                             let yearNum = parseInt(dateParts[2], 10);
