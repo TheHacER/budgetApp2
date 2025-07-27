@@ -78,6 +78,9 @@ class CsvParserService {
     let amount = 0;
     if (profile.amount_col && row[profile.amount_col]) {
       amount = cleanAndParseFloat(row[profile.amount_col]);
+      if (profile.flip_amount_sign) {
+        amount = -amount;
+      }
     } else if (profile.debit_col && profile.credit_col) {
       const debit = cleanAndParseFloat(row[profile.debit_col]);
       const credit = cleanAndParseFloat(row[profile.credit_col]);

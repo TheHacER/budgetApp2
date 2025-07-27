@@ -16,7 +16,9 @@ import {
   Menu,
   MenuItem,
   Box,
-  Typography
+  Typography,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import { MoreVert, AddCircle } from '@mui/icons-material';
 
@@ -40,6 +42,7 @@ function ImportProfileManager() {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData.entries());
+    data.flip_amount_sign = formData.has('flip_amount_sign');
     try {
       if (editingProfile) {
         await api.updateImportProfile(editingProfile.id, data);
@@ -194,6 +197,10 @@ function ImportProfileManager() {
                     margin="normal"
                 />
             </Box>
+            <FormControlLabel
+                control={<Switch name="flip_amount_sign" defaultChecked={Boolean(editingProfile?.flip_amount_sign)} />}
+                label="Amounts need sign flipped"
+            />
             <TextField
               name="date_format"
               label="Date Format (Optional)"
