@@ -93,13 +93,13 @@ class BudgetController {
     static async getBudgetTemplate(req, res) {
         try {
             const subcategories = await Subcategory.findAllWithParent();
-            let csvString = "Category,Subcategory"; // Corrected headers
+            let csvString = "Category,Subcategory"; // header row
 
             const today = new Date();
             for (let i = 0; i < 12; i++) {
                 const d = new Date(today.getFullYear(), today.getMonth() + i, 1);
                 // Format to 'Mon YY' e.g., 'Jul 25'
-                const header = `${d.toLocaleString('default', { month: 'short' })} ${d.getFullYear().toString().slice(-2)}`;
+                const header = `${d.toLocaleString('en-US', { month: 'short' })} ${d.getFullYear().toString().slice(-2)}`;
                 csvString += `,${header}`;
             }
             csvString += "\n";
@@ -123,7 +123,8 @@ class BudgetController {
 
         try {
             const records = parse(req.file.buffer, {
-                columns: true,
+                // Trim header fields as well as values
+                columns: header => header.map(h => h.trim()),
                 skip_empty_lines: true,
                 trim: true,
             });
@@ -131,27 +132,38 @@ class BudgetController {
             const budgetsToSave = [];
             let newCategories = 0;
             let newSubcategories = 0;
+            const categoryCache = new Map();
+            const subcategoryCache = new Map();
 
             for (const rec of records) {
-                const categoryName = rec.Category;
-                const subcategoryName = rec.Subcategory;
+                const categoryName = (rec.Category || '').trim();
+                const subcategoryName = (rec.Subcategory || '').trim();
 
                 if (!categoryName || !subcategoryName) continue;
 
-                // Find or Create Category
-                let category = await dbInstance.get('SELECT id FROM categories WHERE name = ?', [categoryName]);
+                // Find or Create Category (cached)
+                let category = categoryCache.get(categoryName);
                 if (!category) {
-                    const newCat = await Category.create(categoryName);
-                    category = { id: newCat.id };
-                    newCategories++;
+                    category = await dbInstance.get('SELECT id FROM categories WHERE name = ?', [categoryName]);
+                    if (!category) {
+                        const newCat = await Category.create(categoryName);
+                        category = { id: newCat.id };
+                        newCategories++;
+                    }
+                    categoryCache.set(categoryName, category);
                 }
 
-                // Find or Create Subcategory
-                let subcategory = await dbInstance.get('SELECT id FROM subcategories WHERE name = ? AND category_id = ?', [subcategoryName, category.id]);
+                // Find or Create Subcategory (cached)
+                const subKey = `${category.id}:${subcategoryName}`;
+                let subcategory = subcategoryCache.get(subKey);
                 if (!subcategory) {
-                    const newSubcat = await Subcategory.create(subcategoryName, category.id);
-                    subcategory = { id: newSubcat.id };
-                    newSubcategories++;
+                    subcategory = await dbInstance.get('SELECT id FROM subcategories WHERE name = ? AND category_id = ?', [subcategoryName, category.id]);
+                    if (!subcategory) {
+                        const newSubcat = await Subcategory.create(subcategoryName, category.id);
+                        subcategory = { id: newSubcat.id };
+                        newSubcategories++;
+                    }
+                    subcategoryCache.set(subKey, subcategory);
                 }
 
                 // Process budget entries for the row
@@ -167,7 +179,8 @@ class BudgetController {
                             }
                             const monthNum = new Date(Date.parse(monthStr + " 1, 2000")).getMonth() + 1;
 
-                            const amount = parseFloat(rec[header] || 0);
+                            const rawAmount = (rec[header] || '').toString();
+                            const amount = parseFloat(rawAmount.replace(/[^0-9.-]+/g, '')) || 0;
 
                             if (!isNaN(monthNum) && !isNaN(yearNum) && !isNaN(amount)) {
                                 budgetsToSave.push({
