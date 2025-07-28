@@ -12,25 +12,32 @@ class ImportProfile {
   }
 
   static async create(profileData) {
-    const { profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format } = profileData;
+    const { profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format, flip_amount_sign } = profileData;
     const database = await db.openDb();
     const sql = `
-        INSERT INTO import_profiles (profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format) 
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO import_profiles (profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format, flip_amount_sign)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    const result = await database.run(sql, [profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format]);
+    const result = await database.run(sql, [profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format, flip_amount_sign ? 1 : 0]);
     return { id: result.lastID, ...profileData };
   }
 
   static async update(id, profileData) {
-    const { profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format } = profileData;
+    const { profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format, flip_amount_sign } = profileData;
     const database = await db.openDb();
     const sql = `
-        UPDATE import_profiles SET 
-        profile_name = ?, date_col = ?, description_col = ?, amount_col = ?, debit_col = ?, credit_col = ?, date_format = ?
+        UPDATE import_profiles SET
+        profile_name = ?,
+        date_col = ?,
+        description_col = ?,
+        amount_col = ?,
+        debit_col = ?,
+        credit_col = ?,
+        date_format = ?,
+        flip_amount_sign = ?
         WHERE id = ?
     `;
-    await database.run(sql, [profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format, id]);
+    await database.run(sql, [profile_name, date_col, description_col, amount_col, debit_col, credit_col, date_format, flip_amount_sign ? 1 : 0, id]);
     return { id, ...profileData };
   }
 

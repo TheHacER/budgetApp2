@@ -30,16 +30,20 @@ function normalizeDate(dateString, format) {
             });
 
             const day = parseInt(dateObj.DD, 10);
-            const year = parseInt(dateObj.YY || dateObj.YYYY, 10);
-            
-            // Convert month abbreviation to number
-            const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
-            const month = monthNames.indexOf(dateObj.MMM.toUpperCase());
+            const year = parseInt(dateObj.YYYY || dateObj.YY, 10);
 
-            if (!isNaN(day) && !isNaN(year) && month !== -1) {
+            let month;
+            if (dateObj.MM) {
+                month = parseInt(dateObj.MM, 10) - 1;
+            } else if (dateObj.MMM) {
+                const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+                month = monthNames.indexOf(dateObj.MMM.toUpperCase());
+            }
+
+            if (!isNaN(day) && !isNaN(year) && month !== undefined && month !== -1) {
                 const fullYear = year < 100 ? 2000 + year : year; // Convert YY to YYYY
                 date = new Date(Date.UTC(fullYear, month, day));
-                 if (!isNaN(date.getTime())) {
+                if (!isNaN(date.getTime())) {
                     return date.toISOString().split('T')[0];
                 }
             }
@@ -63,9 +67,7 @@ class CsvParserService {
     skip_empty_lines: true,
     trim: true,
     // This allows for rows with a different number of columns.
-    relax_column_count: true,
-    // Skip lines at the top of the file that are not data
-    from_line: 5
+    relax_column_count: true
   });
 
     const results = [];
@@ -78,10 +80,16 @@ class CsvParserService {
     let amount = 0;
     if (profile.amount_col && row[profile.amount_col]) {
       amount = cleanAndParseFloat(row[profile.amount_col]);
+      if (profile.flip_amount_sign) {
+        amount = -amount;
+      }
     } else if (profile.debit_col && profile.credit_col) {
       const debit = cleanAndParseFloat(row[profile.debit_col]);
       const credit = cleanAndParseFloat(row[profile.credit_col]);
       amount = credit - debit;
+      if (profile.flip_amount_sign) {
+        amount = -amount;
+      }
     }
       
       if (Math.abs(amount) < 0.01) continue; // Skip zero-amount transactions

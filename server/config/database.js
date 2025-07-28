@@ -61,8 +61,25 @@ async function migrate(db) {
     CREATE TABLE IF NOT EXISTS planned_income ( id INTEGER PRIMARY KEY AUTOINCREMENT, source_name TEXT NOT NULL, amount REAL NOT NULL, day_of_month INTEGER NOT NULL, is_active BOOLEAN DEFAULT 1, created_at DATETIME DEFAULT CURRENT_TIMESTAMP );
     CREATE TABLE IF NOT EXISTS categorization_rules ( id INTEGER PRIMARY KEY AUTOINCREMENT, vendor_id INTEGER NOT NULL UNIQUE, subcategory_id INTEGER NOT NULL, FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE CASCADE, FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE );
     CREATE TABLE IF NOT EXISTS monthly_history ( id INTEGER PRIMARY KEY AUTOINCREMENT, year INTEGER NOT NULL, month INTEGER NOT NULL, subcategory_id INTEGER NOT NULL, budgeted_amount REAL NOT NULL, actual_spend REAL NOT NULL, budget_type TEXT NOT NULL, final_surplus_or_rollover REAL NOT NULL, reconciled_at DATETIME DEFAULT CURRENT_TIMESTAMP, is_closed BOOLEAN DEFAULT 1, UNIQUE(year, month, subcategory_id), FOREIGN KEY (subcategory_id) REFERENCES subcategories(id) ON DELETE CASCADE );
-    CREATE TABLE IF NOT EXISTS import_profiles ( id INTEGER PRIMARY KEY AUTOINCREMENT, profile_name TEXT NOT NULL UNIQUE, date_col TEXT NOT NULL, description_col TEXT NOT NULL, amount_col TEXT, debit_col TEXT, credit_col TEXT, date_format TEXT );
+    CREATE TABLE IF NOT EXISTS import_profiles (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        profile_name TEXT NOT NULL UNIQUE,
+        date_col TEXT NOT NULL,
+        description_col TEXT NOT NULL,
+        amount_col TEXT,
+        debit_col TEXT,
+        credit_col TEXT,
+        date_format TEXT,
+        flip_amount_sign BOOLEAN DEFAULT 0
+    );
   `;
   await db.exec(schema);
+
+  // Add new column if the table existed before migration
+  const columns = await db.all("PRAGMA table_info('import_profiles')");
+  const hasFlip = columns.some(c => c.name === 'flip_amount_sign');
+  if (!hasFlip) {
+    await db.exec('ALTER TABLE import_profiles ADD COLUMN flip_amount_sign BOOLEAN DEFAULT 0');
+  }
 }
 module.exports = { openDb, migrate, closeDb }; // Export database utility functions

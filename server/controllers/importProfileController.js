@@ -1,4 +1,5 @@
 const ImportProfile = require('../models/ImportProfile');
+const ProfileDetectionService = require('../services/profileDetectionService');
 
 class ImportProfileController {
   static async getAllProfiles(req, res) {
@@ -16,6 +17,16 @@ class ImportProfileController {
       res.status(201).json(profile);
     } catch (error) {
       res.status(500).json({ message: 'Error creating import profile.', error: error.message });
+    }
+  }
+
+  static async analyzeCsv(req, res) {
+    if (!req.file) return res.status(400).json({ message: 'No file uploaded.' });
+    try {
+      const result = ProfileDetectionService.analyze(req.file.buffer);
+      res.status(200).json(result);
+    } catch (error) {
+      res.status(500).json({ message: 'Error analyzing CSV.' });
     }
   }
 

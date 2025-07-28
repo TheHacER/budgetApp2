@@ -2,9 +2,13 @@ const express = require('express');
 const router = express.Router();
 const ImportProfileController = require('../controllers/importProfileController');
 const isAuthenticated = require('../middleware/isAuthenticated');
+const multer = require('multer');
+const storage = multer.memoryStorage();
+const upload = multer({ storage });
 
 router.use(isAuthenticated);
 
+router.post('/analyze', upload.single('profileFile'), ImportProfileController.analyzeCsv);
 router.get('/', ImportProfileController.getAllProfiles);
 router.post('/', ImportProfileController.createProfile);
 router.put('/:id', ImportProfileController.updateProfile);
