@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import * as api from '../../services/api';
 import {
   Button,
@@ -40,6 +40,8 @@ function ImportProfileManager() {
     flip_amount_sign: false
   });
   const [samples, setSamples] = useState([]);
+  const [selectedFile, setSelectedFile] = useState('');
+  const fileInputRef = useRef(null);
 
   const fetchProfiles = () => {
     api.getAllImportProfiles().then(setProfiles).finally(() => setLoading(false));
@@ -76,6 +78,8 @@ function ImportProfileManager() {
 
   const openDialog = (profile = null) => {
     setEditingProfile(profile);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    setSelectedFile('');
     if (profile) {
       setFormFields({
         profile_name: profile.profile_name,
@@ -120,6 +124,7 @@ function ImportProfileManager() {
   const handleFileChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setSelectedFile(file.name);
     try {
       const analysis = await api.analyzeImportProfile(file);
       setFormFields(f => ({
@@ -198,8 +203,19 @@ function ImportProfileManager() {
           <DialogContent>
             <Button variant="outlined" component="label" sx={{ mt: 1 }}>
               Upload Example CSV
-              <input type="file" hidden accept=".csv" onChange={handleFileChange} />
+              <input
+                type="file"
+                hidden
+                accept=".csv"
+                onChange={handleFileChange}
+                ref={fileInputRef}
+              />
             </Button>
+            {selectedFile && (
+              <Typography variant="caption" sx={{ ml: 2 }}>
+                {selectedFile}
+              </Typography>
+            )}
             <TextField
               name="profile_name"
               label="Profile Name"
