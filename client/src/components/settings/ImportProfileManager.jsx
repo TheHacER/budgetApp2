@@ -29,6 +29,17 @@ function ImportProfileManager() {
   const [editingProfile, setEditingProfile] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
   const openMenu = Boolean(anchorEl);
+  const [formFields, setFormFields] = useState({
+    profile_name: '',
+    date_col: '',
+    description_col: '',
+    amount_col: '',
+    debit_col: '',
+    credit_col: '',
+    date_format: '',
+    flip_amount_sign: false
+  });
+  const [samples, setSamples] = useState([]);
 
   const fetchProfiles = () => {
     api.getAllImportProfiles().then(setProfiles).finally(() => setLoading(false));
@@ -40,9 +51,7 @@ function ImportProfileManager() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    const formData = new FormData(e.target);
-    const data = Object.fromEntries(formData.entries());
-    data.flip_amount_sign = formData.has('flip_amount_sign');
+    const data = { ...formFields };
     try {
       if (editingProfile) {
         await api.updateImportProfile(editingProfile.id, data);
@@ -67,6 +76,30 @@ function ImportProfileManager() {
 
   const openDialog = (profile = null) => {
     setEditingProfile(profile);
+    if (profile) {
+      setFormFields({
+        profile_name: profile.profile_name,
+        date_col: profile.date_col,
+        description_col: profile.description_col,
+        amount_col: profile.amount_col || '',
+        debit_col: profile.debit_col || '',
+        credit_col: profile.credit_col || '',
+        date_format: profile.date_format || '',
+        flip_amount_sign: Boolean(profile.flip_amount_sign)
+      });
+    } else {
+      setFormFields({
+        profile_name: '',
+        date_col: '',
+        description_col: '',
+        amount_col: '',
+        debit_col: '',
+        credit_col: '',
+        date_format: '',
+        flip_amount_sign: false
+      });
+      setSamples([]);
+    }
     setIsDialogOpen(true);
   }
 
@@ -77,6 +110,31 @@ function ImportProfileManager() {
 
   const handleCloseMenu = () => {
     setAnchorEl(null);
+  };
+
+  const handleFieldChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormFields(f => ({ ...f, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const analysis = await api.analyzeImportProfile(file);
+      setFormFields(f => ({
+        ...f,
+        date_col: analysis.date_col || '',
+        description_col: analysis.description_col || '',
+        amount_col: analysis.amount_col || '',
+        debit_col: analysis.debit_col || '',
+        credit_col: analysis.credit_col || '',
+        flip_amount_sign: analysis.flip_amount_sign
+      }));
+      setSamples(analysis.samples || []);
+    } catch (err) {
+      alert('Analysis failed: ' + err.message);
+    }
   };
 
   if (loading) return <p>Loading...</p>;
@@ -138,10 +196,15 @@ function ImportProfileManager() {
         <DialogTitle>{editingProfile ? 'Edit' : 'Add'} Import Profile</DialogTitle>
         <form onSubmit={handleSave}>
           <DialogContent>
+            <Button variant="outlined" component="label" sx={{ mt: 1 }}>
+              Upload Example CSV
+              <input type="file" hidden accept=".csv" onChange={handleFileChange} />
+            </Button>
             <TextField
               name="profile_name"
               label="Profile Name"
-              defaultValue={editingProfile?.profile_name}
+              value={formFields.profile_name}
+              onChange={handleFieldChange}
               placeholder="e.g., My Barclays Account"
               required
               fullWidth
@@ -150,7 +213,8 @@ function ImportProfileManager() {
             <TextField
               name="date_col"
               label="Date Column Header"
-              defaultValue={editingProfile?.date_col}
+              value={formFields.date_col}
+              onChange={handleFieldChange}
               placeholder="Date"
               required
               fullWidth
@@ -159,7 +223,8 @@ function ImportProfileManager() {
             <TextField
               name="description_col"
               label="Description Column Header"
-              defaultValue={editingProfile?.description_col}
+              value={formFields.description_col}
+              onChange={handleFieldChange}
               placeholder="Transaction"
               required
               fullWidth
@@ -171,7 +236,8 @@ function ImportProfileManager() {
                 <TextField
                     name="amount_col"
                     label="Amount Column"
-                    defaultValue={editingProfile?.amount_col}
+                    value={formFields.amount_col}
+                    onChange={handleFieldChange}
                     placeholder="Amount (e.g., -12.34 for debits)"
                     fullWidth
                     margin="normal"
@@ -183,7 +249,8 @@ function ImportProfileManager() {
                 <TextField
                     name="debit_col"
                     label="Debit Column"
-                    defaultValue={editingProfile?.debit_col}
+                    value={formFields.debit_col}
+                    onChange={handleFieldChange}
                     placeholder="Paid Out"
                     fullWidth
                     margin="normal"
@@ -191,25 +258,51 @@ function ImportProfileManager() {
                 <TextField
                     name="credit_col"
                     label="Credit Column"
-                    defaultValue={editingProfile?.credit_col}
+                    value={formFields.credit_col}
+                    onChange={handleFieldChange}
                     placeholder="Paid In"
                     fullWidth
                     margin="normal"
                 />
             </Box>
             <FormControlLabel
-                control={<Switch name="flip_amount_sign" defaultChecked={Boolean(editingProfile?.flip_amount_sign)} />}
+                control={<Switch name="flip_amount_sign" checked={formFields.flip_amount_sign} onChange={handleFieldChange} />}
                 label="Amounts need sign flipped"
             />
             <TextField
               name="date_format"
               label="Date Format (Optional)"
-              defaultValue={editingProfile?.date_format}
+              value={formFields.date_format}
+              onChange={handleFieldChange}
               placeholder="e.g., YYYY-MM-DD"
               fullWidth
               margin="normal"
               helperText="E.g., DD/MM/YYYY. Leave blank to auto-detect."
             />
+
+            {samples.length > 0 && (
+              <Box sx={{mt:2}}>
+                <Typography variant="subtitle2">Sample Preview</Typography>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell>Description</TableCell>
+                      <TableCell>Amount</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {samples.map((s,i)=>(
+                      <TableRow key={i}>
+                        <TableCell>{s.date}</TableCell>
+                        <TableCell>{s.description}</TableCell>
+                        <TableCell>{s.amount}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Box>
+            )}
           </DialogContent>
           <DialogActions sx={{ p: '0 24px 24px' }}>
             <Button onClick={() => setIsDialogOpen(false)}>Cancel</Button>

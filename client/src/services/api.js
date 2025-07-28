@@ -49,6 +49,11 @@ export async function getAllImportProfiles() { return fetchApi('/import-profiles
 export async function createImportProfile(profileData) { return fetchApi('/import-profiles', { method: 'POST', body: JSON.stringify(profileData) }); }
 export async function updateImportProfile(id, profileData) { return fetchApi(`/import-profiles/${id}`, { method: 'PUT', body: JSON.stringify(profileData) }); }
 export async function deleteImportProfile(id) { return fetchApi(`/import-profiles/${id}`, { method: 'DELETE' }); }
+export async function analyzeImportProfile(file) {
+  const formData = new FormData();
+  formData.append('profileFile', file);
+  return fetchApi('/import-profiles/analyze', { method: 'POST', body: formData }, true);
+}
 
 
 // TRANSACTIONS
