@@ -31,6 +31,7 @@ function RecurringBillsManager({ isOpen: externalIsOpen, onClose: externalOnClos
     const [error, setError] = useState('');
     const [isInternalDialogOpen, setInternalDialogOpen] = useState(false);
     const [editingBill, setEditingBill] = useState(null);
+    const [newVendorName, setNewVendorName] = useState('');
     const [anchorEl, setAnchorEl] = useState(null);
     const openMenu = Boolean(anchorEl);
 
@@ -52,6 +53,7 @@ function RecurringBillsManager({ isOpen: externalIsOpen, onClose: externalOnClos
     const handleCloseDialog = () => {
         setEditingBill(null);
         setFormData(getInitialFormData());
+        setNewVendorName('');
         if (isControlled) {
             externalOnClose();
         } else {
@@ -109,6 +111,7 @@ function RecurringBillsManager({ isOpen: externalIsOpen, onClose: externalOnClos
                     end_date: '',
                     notes: `From transaction: ${billToCreateFromTx.description_original}`,
                 });
+                setNewVendorName('');
             } else if (editingBill) {
                 setFormData({
                     vendor_id: editingBill.vendor_id?.toString() || '',
@@ -119,9 +122,11 @@ function RecurringBillsManager({ isOpen: externalIsOpen, onClose: externalOnClos
                     end_date: editingBill.end_date ? new Date(editingBill.end_date).toISOString().split('T')[0] : '',
                     notes: editingBill.notes || '',
                 });
+                setNewVendorName('');
             } else {
                 setEditingBill(null);
                 setFormData(getInitialFormData());
+                setNewVendorName('');
             }
         }
     }, [isOpen, editingBill, billToCreateFromTx]);
@@ -138,10 +143,18 @@ function RecurringBillsManager({ isOpen: externalIsOpen, onClose: externalOnClos
         e.preventDefault();
         const payload = { ...formData, end_date: formData.end_date || null };
         try {
+            let vendorIdToUse = payload.vendor_id;
+            if (payload.vendor_id === 'new' && newVendorName) {
+                const newVendor = await api.createVendor({ name: newVendorName.toLowerCase().replace(/\s/g, ''), displayName: newVendorName });
+                vendorIdToUse = newVendor.id.toString();
+            }
+
+            const finalPayload = { ...payload, vendor_id: vendorIdToUse };
+
             if (editingBill) {
-                await api.updateRecurringBill(editingBill.id, payload);
+                await api.updateRecurringBill(editingBill.id, finalPayload);
             } else {
-                await api.createRecurringBill(payload);
+                await api.createRecurringBill(finalPayload);
             }
 
             if (isControlled && externalOnSave) {
@@ -183,7 +196,17 @@ function RecurringBillsManager({ isOpen: externalIsOpen, onClose: externalOnClos
                         <InputLabel id="vendor-select-label">Vendor</InputLabel>
                         <Select labelId="vendor-select-label" name="vendor_id" value={formData.vendor_id} onChange={handleSelectChange} required>
                             {vendors.map(v => <MenuItem key={v.id} value={v.id.toString()}>{v.display_name}</MenuItem>)}
+                            {isControlled && <MenuItem value="new">-- Create New Vendor --</MenuItem>}
                         </Select>
+                        {isControlled && formData.vendor_id === 'new' && (
+                            <TextField
+                                label="New Vendor Name"
+                                value={newVendorName}
+                                onChange={(e) => setNewVendorName(e.target.value)}
+                                fullWidth
+                                margin="normal"
+                            />
+                        )}
                     </FormControl>
                     <FormControl fullWidth margin="normal">
                         <InputLabel id="category-select-label">Category</InputLabel>
