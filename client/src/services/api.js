@@ -52,11 +52,11 @@ export async function deleteImportProfile(id) { return fetchApi(`/import-profile
 
 
 // TRANSACTIONS
-export async function uploadTransactionsFile(file, profileId) {
-  const formData = new FormData();
-  formData.append('transactionsFile', file);
-  formData.append('profileId', profileId);
-  return fetchApi('/transactions/upload', { method: 'POST', body: formData }, true);
+export async function importTransactions(accessToken, startDate, endDate) {
+  return fetchApi('/transactions/import', {
+    method: 'POST',
+    body: JSON.stringify({ accessToken, startDate, endDate })
+  });
 }
 export async function getAllTransactions() { return fetchApi('/transactions'); }
 export async function categorizeTransaction(transactionId, data) { return fetchApi(`/transactions/${transactionId}/categorize`, { method: 'PUT', body: JSON.stringify(data) }); }
