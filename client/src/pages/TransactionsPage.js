@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import * as api from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import CategorizationModal from '../components/CategorizationModal';
@@ -22,11 +22,8 @@ import {
     DialogContent,
     DialogTitle,
     DialogActions,
-    Select,
-    MenuItem,
-    FormControl,
-    InputLabel,
     IconButton,
+    TextField,
     Box,
     Typography
 } from '@mui/material';
@@ -152,33 +149,31 @@ function TransactionsPage() {
     const [error, setError] = useState('');
     const [uploading, setUploading] = useState(false);
     const [uploadMessage, setUploadMessage] = useState('');
-    const fileInputRef = useRef(null);
+    const [accessToken, setAccessToken] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
     const [transactionToCategorize, setTransactionToCategorize] = useState(null);
     const [transactionToSplit, setTransactionToSplit] = useState(null);
     const [filter, setFilter] = useState('all');
     const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
     const [transactionToMakeRecurring, setTransactionToMakeRecurring] = useState(null);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-    const [importProfiles, setImportProfiles] = useState([]);
-    const [selectedProfileId, setSelectedProfileId] = useState('');
     const [isApplyingRules, setIsApplyingRules] = useState(false);
     const [tabValue, setTabValue] = useState(0);
 
     const fetchPageData = useCallback(async () => {
         try {
             setLoading(true);
-            const [transactionsData, ignoredData, subcategoriesData, vendorsData, profilesData] = await Promise.all([
+            const [transactionsData, ignoredData, subcategoriesData, vendorsData] = await Promise.all([
                 api.getAllTransactions(),
                 api.getIgnoredTransactions(),
                 api.getAllSubcategories(),
-                api.getAllVendors(),
-                api.getAllImportProfiles()
+                api.getAllVendors()
             ]);
             setAllTransactions(transactionsData);
             setIgnoredTransactions(ignoredData);
             setAllSubcategories(subcategoriesData);
             setAllVendors(vendorsData);
-            setImportProfiles(profilesData);
         } catch (err) { setError(err.message); }
         finally { setLoading(false); }
     }, []);
@@ -212,30 +207,24 @@ function TransactionsPage() {
     }, [filteredTransactions, appSettings]);
 
     const handleOpenImportModal = () => {
-        if (importProfiles.length === 0) {
-            alert("No import profiles found. Please create one in Settings > Application first.");
-            return;
-        }
-        setSelectedProfileId(importProfiles.length > 0 ? importProfiles[0].id.toString() : '');
         setIsImportModalOpen(true);
-    };
-
-    const handleFileSelect = async (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        setIsImportModalOpen(false);
-        setUploading(true);
         setUploadMessage('');
         setError('');
+    };
+
+    const handleImportSubmit = async () => {
+        if (!accessToken || !startDate || !endDate) {
+            alert('Please provide an access token, start date and end date');
+            return;
+        }
+        setUploading(true);
         try {
-            const result = await api.uploadTransactionsFile(file, selectedProfileId);
+            const result = await api.importTransactions(accessToken, startDate, endDate);
             setUploadMessage(result.message);
             fetchPageData();
+            setIsImportModalOpen(false);
         } catch (err) { setError(err.message); }
-        finally {
-            setUploading(false);
-            if (fileInputRef.current) { fileInputRef.current.value = ""; }
-        }
+        finally { setUploading(false); }
     };
 
     const handleApplyRules = async () => {
@@ -301,18 +290,16 @@ function TransactionsPage() {
                 <RecurringBillsManager isOpen={isRecurringModalOpen} onClose={() => setIsRecurringModalOpen(false)} billToCreateFromTx={transactionToMakeRecurring} onSave={fetchPageData} />
             )}
             <Dialog open={isImportModalOpen} onClose={() => setIsImportModalOpen(false)}>
-                <DialogTitle>Select Import Profile</DialogTitle>
+                <DialogTitle>Import Transactions from Plaid</DialogTitle>
                 <DialogContent>
-                    <FormControl fullWidth margin="normal">
-                        <InputLabel id="import-profile-label">Profile</InputLabel>
-                        <Select labelId="import-profile-label" value={selectedProfileId} onChange={(e) => setSelectedProfileId(e.target.value)}>
-                            {importProfiles.map(p => <MenuItem key={p.id} value={p.id.toString()}>{p.profile_name}</MenuItem>)}
-                        </Select>
-                    </FormControl>
+                    <TextField label="Access Token" fullWidth margin="normal" value={accessToken} onChange={(e) => setAccessToken(e.target.value)} />
+                    <TextField label="Start Date (YYYY-MM-DD)" fullWidth margin="normal" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                    <TextField label="End Date (YYYY-MM-DD)" fullWidth margin="normal" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                 </DialogContent>
                 <DialogActions>
-                    <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileSelect} accept=".csv" />
-                    <Button onClick={() => { if (selectedProfileId) { fileInputRef.current.click() } else { alert("Please select a profile first.") } }}>Select File & Upload</Button>
+                    <Button onClick={handleImportSubmit} variant="contained" disabled={uploading} startIcon={<CloudUpload />}>
+                        {uploading ? 'Importing...' : 'Import'}
+                    </Button>
                 </DialogActions>
             </Dialog>
         </>

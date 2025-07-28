@@ -1,25 +1,25 @@
-const CsvParserService = require('../services/csvParserService');
 const VendorNormalizationService = require('../services/vendorNormalizationService');
 const Transaction = require('../models/Transaction');
 const IgnoredTransaction = require('../models/IgnoredTransaction');
 const CategorizationRule = require('../models/CategorizationRule');
 const SplitTransaction = require('../models/SplitTransaction');
+const PlaidService = require('../services/plaidService');
 const db = require('../config/database');
 
 
 class TransactionController {
   static async uploadTransactions(req, res) {
-    if (!req.file) { return res.status(400).json({ message: 'No file uploaded.' }); }
-    
-    try {
-      const { profileId } = req.body;
-      if(!profileId) { return res.status(400).json({ message: 'No import profile selected.' }); }
+    const { accessToken, startDate, endDate } = req.body;
+    if (!accessToken || !startDate || !endDate) {
+      return res.status(400).json({ message: 'accessToken, startDate and endDate are required.' });
+    }
 
-      const parsedTransactions = await CsvParserService.parse(req.file.buffer, profileId);
-      
+    try {
+      const parsedTransactions = await PlaidService.getTransactions(accessToken, startDate, endDate);
+
       const formattedTransactions = [];
       for(const tx of parsedTransactions) {
-        const vendorId = await VendorNormalizationService.normalize(tx.description);
+        const vendorId = await VendorNormalizationService.normalize(tx.name || tx.merchant_name || tx.description);
         let subcategoryId = null;
         if (vendorId) {
             const rule = await CategorizationRule.findRuleByVendor(vendorId);
@@ -28,10 +28,10 @@ class TransactionController {
 
         formattedTransactions.push({
           transaction_date: tx.date,
-          description_original: tx.description,
+          description_original: tx.name,
           amount: Math.abs(tx.amount),
-          is_debit: tx.amount < 0,
-          source_account: tx.source,
+          is_debit: tx.amount > 0,
+          source_account: tx.account_id,
           vendor_id: vendorId,
           subcategory_id: subcategoryId,
         });
@@ -55,7 +55,7 @@ class TransactionController {
       res.status(201).json({ message: `Successfully saved ${newCount} new transactions. Ignored ${ignoredCount} duplicates.` });
     } catch (error) {
       console.error(error)
-      res.status(500).json({ message: error.message || 'Error processing file.' });
+      res.status(500).json({ message: error.message || 'Error importing transactions.' });
     }
   }
 
